@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DOPPLER STRIKE // 多普勒战机</title>
+  <link rel="stylesheet" href="./src/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+    <!-- 主游戏画布 -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- 顶部关卡选择器与计时器 -->
+    <div class="hud-header-bar">
+      <div class="level-selector">
+        <button class="level-tab active" id="tab-stg1">STAGE 1</button>
+        <button class="level-tab" id="tab-stg2s7">2-s7 (7弱点)</button>
+        <button class="level-tab" id="tab-stg2s5">2-s5 (5弱点)</button>
+        <button class="level-tab" id="tab-stg2s8">2-s8 (8弱点)</button>
+        <button class="level-tab" id="tab-stg2s4">2-s4 (4弱点)</button>
+        <button class="level-tab" id="tab-stg2s9">2-s9 (9弱点)</button>
+        <button class="level-tab climax-tab" id="tab-stg2boss">★ 2-BOSS (五阶段)</button>
+      </div>
+
+      <!-- TAS (Tool-Assisted Speedrun) 自动演示控制面板 -->
+      <div class="tas-control-box">
+        <button class="tas-btn" id="tas-run-btn" title="执行当前关卡理论最优解演示">▶ TAS 最优解演示</button>
+        <button class="tas-btn tas-all-btn" id="tas-run-all-btn" title="全自动从头至尾全关卡通关测试">⚡ TAS 全关卡巡航</button>
+      </div>
+
+      <!-- 第二/三关挑战专用计时器 -->
+      <div class="speedrun-timer-card" id="speedrun-timer" style="display: none;">
+        <span class="timer-tag">MISSION TIME</span>
+        <span class="timer-val" id="timer-digits">00:00.00</span>
+      </div>
+    </div>
+
+    <!-- 顶部 HUD：敌人生命与护盾状态 -->
+    <div class="hud-top">
+      <div class="target-card">
+        <div class="target-meta">
+          <span class="target-tag" id="boss-tag">TARGET 01 // SENTINEL CORE</span>
+          <span class="target-hp-label" id="boss-hp-text">HP: 70 / 70</span>
+        </div>
+        <div class="hp-bar-track">
+          <div class="hp-bar-fill" id="boss-hp-bar" style="width: 100%;"></div>
+        </div>
+        <div class="shield-state-line" id="shield-status-line">
+          <span class="status-dot shield-on"></span>
+          <span id="shield-status-text">旋转护盾：防御偏转中 (4/4 弱点激活)</span>
+          <div class="shield-recharge-track" id="shield-recharge-container" style="display: none;">
+            <div class="shield-recharge-fill" id="shield-recharge-bar"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧 HUD：多普勒核心数据监测器（敌方受击频率） -->
+    <div class="hud-right">
+      <div class="freq-monitor-panel">
+        <div class="panel-header">
+          <div class="panel-title">HIT FREQUENCY DETECTOR</div>
+          <div class="panel-badge">REALTIME</div>
+        </div>
+        <div class="freq-display">
+          <div class="freq-value-row">
+            <span class="freq-number" id="freq-num">0.00</span>
+            <span class="freq-unit">Hz</span>
+          </div>
+          <div class="freq-status" id="freq-status">TARGET IDLE</div>
+        </div>
+        <!-- 实时受击脉冲波形示波器 -->
+        <canvas id="freq-waveform" width="220" height="48"></canvas>
+        <div class="freq-footnote">
+          <div class="footnote-item">
+            <span class="fn-label">基准射速:</span>
+            <span class="fn-val">3.33 Hz (0.30s/发)</span>
+          </div>
+          <div class="footnote-item">
+            <span class="fn-label">多普勒增益:</span>
+            <span class="fn-val" id="freq-multiplier">1.00x</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 技能 HUD 状态槽 -->
+      <div class="skills-panel">
+        <div class="skill-slot" id="slot-skill1">
+          <div class="skill-key">J</div>
+          <div class="skill-info">
+            <div class="skill-name">自动射击</div>
+            <div class="skill-status fire-off" id="skill1-status">CEASE [OFF]</div>
+          </div>
+        </div>
+        <div class="skill-slot" id="slot-skill2">
+          <div class="skill-key">K</div>
+          <div class="skill-info">
+            <div class="skill-name">折跃闪现</div>
+            <div class="skill-status" id="skill2-status">READY</div>
+          </div>
+        </div>
+        <div class="skill-slot" id="slot-skill3">
+          <div class="skill-key">L</div>
+          <div class="skill-info">
+            <div class="skill-name">力场护盾</div>
+            <div class="skill-status" id="skill3-status">READY</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 时停移动引导提示层 (首次破盾触发) -->
+    <div class="freeze-prompt" id="freeze-prompt" style="display: none;">
+      <div class="freeze-prompt-content">
+        <div class="freeze-badge">SYSTEM ACTIVATED // TACTICAL CONTROLS</div>
+        
+        <div class="freeze-columns">
+          <!-- 推进移动 -->
+          <div class="freeze-col">
+            <div class="freeze-keys">
+              <span class="freeze-key">W</span>
+              <div class="freeze-keys-row">
+                <span class="freeze-key">A</span>
+                <span class="freeze-key">S</span>
+                <span class="freeze-key">D</span>
+              </div>
+            </div>
+            <div class="freeze-subtext">8 向战机推进</div>
+          </div>
+
+          <div class="freeze-divider"></div>
+
+          <!-- 战术技能 -->
+          <div class="freeze-col skills-col">
+            <div class="freeze-skill-row">
+              <span class="freeze-key skill-badge">J</span>
+              <span class="freeze-skill-label">切换射击 (按 J 开启/关闭)</span>
+            </div>
+            <div class="freeze-skill-row">
+              <span class="freeze-key skill-badge">K</span>
+              <span class="freeze-skill-label">折跃闪现 (300px 超距瞬移)</span>
+            </div>
+            <div class="freeze-skill-row">
+              <span class="freeze-key skill-badge">L</span>
+              <span class="freeze-skill-label">力场护盾 (反弹弹幕 & 绝对防御)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="freeze-text">按移动键解除时停，投入战斗</div>
+      </div>
+    </div>
+
+    <!-- 底部操作指示器与玩家三滴血槽 -->
+    <div class="hud-bottom">
+      <!-- 玩家三滴血能量晶格槽 -->
+      <div class="player-hp-card" id="player-hp-card">
+        <span class="player-hp-tag">HULL INTEGRITY</span>
+        <div class="hp-cells" id="player-hp-cells">
+          <span class="hp-cell active"></span>
+          <span class="hp-cell active"></span>
+          <span class="hp-cell active"></span>
+        </div>
+      </div>
+
+      <div class="controls-hint" id="controls-hint">
+        <span class="key-cap">W</span><span class="key-cap">A</span><span class="key-cap">S</span><span class="key-cap">D</span> 推进 &nbsp;|&nbsp;
+        <span class="key-cap">J</span> 开启/关闭射击 &nbsp;|&nbsp;
+        <span class="key-cap">K</span> 折跃闪现 &nbsp;|&nbsp;
+        <span class="key-cap">L</span> 反射护盾
+      </div>
+    </div>
+
+    <!-- 全景战术选关大厅 (首页与结算直接进入) -->
+    <div class="mission-hub" id="mission-hub">
+      <div class="hub-header">
+        <div class="hub-badge">DOPPLER TACTICAL MATRIX // 战术验证大厅</div>
+        <h1 class="hub-title">选择验证阶段</h1>
+        <p class="hub-subtitle">每个不同弱点数均由不同物理机制触发 · 点击阶段卡片即刻开战</p>
+      </div>
+
+      <div class="mission-cards-grid" id="mission-cards-grid">
+        <!-- 由 main.js 动态渲染生成带高亮动效的 7 张阶段卡片 -->
+      </div>
+    </div>
+
+    <!-- 游戏开始与结算遮罩弹窗 -->
+    <div class="overlay hidden" id="game-overlay">
+      <div class="overlay-card">
+        <div class="card-badge" id="overlay-badge">MISSION 01</div>
+        <h1 class="card-title" id="overlay-title">多普勒突击</h1>
+        <p class="card-desc" id="overlay-desc" style="text-align: center; margin-bottom: 24px;">
+          战机已配置自导追踪火控系统。<br/>
+          探索击破敌方哨兵核心的方法。
+        </p>
+        <button class="action-btn" id="start-btn">开始游戏</button>
+        <button class="action-btn secondary-btn" id="hub-btn">返回战术大厅</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
