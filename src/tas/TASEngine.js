@@ -63,18 +63,17 @@ export class TASEngine {
     const inputManager = this.ctx.input;
     if (!inputManager) return;
 
-    // 1. 触发瞬时动作 (J/K/L 技能)
+    // 1. 触发瞬时动作 (J: 折跃闪现, K: 反射力场)
     if (inputs.actions && inputs.actions.length > 0) {
       for (const act of inputs.actions) {
         if (act === 'toggleFire') {
-          inputManager.skill1Triggered = true;
-          this.logAction('切换战术射击 (J)');
-        } else if (act === 'skill2') {
-          inputManager.skill2Triggered = true;
-          this.logAction('释放折跃闪现 (K)');
-        } else if (act === 'skill3') {
-          inputManager.skill3Triggered = true;
-          this.logAction('展开反射力场盾 (L)');
+          // 战机默认全程开启自动连射，无须手动触发
+        } else if (act === 'skill2' || act === 'blink') {
+          inputManager.skill1Triggered = true; // J 键: 折跃闪现
+          this.logAction('释放折跃闪现 (J)');
+        } else if (act === 'skill3' || act === 'shield') {
+          inputManager.skill2Triggered = true; // K 键: 反射力场
+          this.logAction('展开反射力场盾 (K)');
         }
       }
     }

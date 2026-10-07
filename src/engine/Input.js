@@ -7,9 +7,9 @@ export class InputManager {
     this.canvas = canvas;
 
     // 技能触发标记 (单次按下触发)
-    this.skill1Triggered = false; // J
-    this.skill2Triggered = false; // K
-    this.skill3Triggered = false; // L
+    this.skill1Triggered = false; // J: 折跃闪现
+    this.skill2Triggered = false; // K: 反射力场
+    this.skill3Triggered = false; // L: (备用兼容)
 
     this.initEvents();
   }
@@ -18,13 +18,13 @@ export class InputManager {
     window.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
       if (e.code === 'KeyJ') {
-        this.skill1Triggered = true;
+        this.skill1Triggered = true; // J 键: 折跃闪现
       }
       if (e.code === 'KeyK') {
-        this.skill2Triggered = true;
+        this.skill2Triggered = true; // K 键: 反射力场
       }
       if (e.code === 'KeyL') {
-        this.skill3Triggered = true;
+        this.skill2Triggered = true; // L 键兼容触发力场
       }
     });
 
@@ -46,8 +46,10 @@ export class InputManager {
 
     window.addEventListener('mousemove', (e) => {
       const rect = this.canvas.getBoundingClientRect();
-      this.mousePos.x = e.clientX - rect.left;
-      this.mousePos.y = e.clientY - rect.top;
+      const scaleX = rect.width > 0 ? 800 / rect.width : 1;
+      const scaleY = rect.height > 0 ? 800 / rect.height : 1;
+      this.mousePos.x = (e.clientX - rect.left) * scaleX;
+      this.mousePos.y = (e.clientY - rect.top) * scaleY;
     });
   }
 
@@ -71,8 +73,8 @@ export class InputManager {
     return { x: 0, y: 0 };
   }
 
-  // 消费一次 J 键射击模式切换触发
-  consumeToggleFire() {
+  // 消费一次 J 键折跃闪现触发
+  consumeSkill1() {
     if (this.skill1Triggered) {
       this.skill1Triggered = false;
       return true;
@@ -80,12 +82,12 @@ export class InputManager {
     return false;
   }
 
-  // 兼容别名
-  consumeSkill1() {
-    return this.consumeToggleFire();
+  // 别名
+  consumeBlink() {
+    return this.consumeSkill1();
   }
 
-  // 消费一次 K 技能触发
+  // 消费一次 K 键反射力场盾触发
   consumeSkill2() {
     if (this.skill2Triggered) {
       this.skill2Triggered = false;
@@ -94,12 +96,18 @@ export class InputManager {
     return false;
   }
 
-  // 消费一次 L 技能 (反射力场盾) 触发
+  // 别名
+  consumeShield() {
+    return this.consumeSkill2();
+  }
+
+  // 兼容老调用
   consumeSkill3() {
-    if (this.skill3Triggered) {
-      this.skill3Triggered = false;
-      return true;
-    }
+    return this.consumeSkill2();
+  }
+
+  // 兼容老调用：火控切换已删除，战机常驻自动连射
+  consumeToggleFire() {
     return false;
   }
 }

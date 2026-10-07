@@ -17,19 +17,32 @@ export class Shield {
     this.weakpoints = new Array(this.count).fill(true);
 
     this.isBroken = false;
-    this.rechargeDuration = 2.4; // 破盾后暴露时间
+    this.rechargeDuration = 1.45; // 破盾后暴露时间 (静止严格限额 6 血)
     this.rechargeTimer = 0;
+
+    // 碎盾短时顿挫动画机制 (0.3s 期间无敌且子弹无法穿透偏转)
+    this.isShattering = false;
+    this.shatterDuration = 0.3; // 0.3 秒紧凑顿挫动画
+    this.shatterTimer = 0;
+    this.justBroken = false;
+    this.shatterShockwaves = [];
+    this.shatterShards = [];
 
     this.firstHitRegistered = false;
     this.sparks = []; // 受击击破粒子
   }
 
   // 动态切换弱点配置 (如第二关 6 弱点冲锋护盾或 2 弱点环绕护盾)
-  setConfiguration(count, rechargeDuration = 2.4) {
+  setConfiguration(count, rechargeDuration = 1.45) {
     this.count = count;
     this.rechargeDuration = rechargeDuration;
     this.weakpoints = new Array(this.count).fill(true);
     this.isBroken = false;
+    this.isShattering = false;
+    this.shatterTimer = 0;
+    this.justBroken = false;
+    this.shatterShockwaves = [];
+    this.shatterShards = [];
     this.rechargeTimer = 0;
     this.firstHitRegistered = false;
     this.currentAngle = 0;
@@ -45,6 +58,54 @@ export class Shield {
       if (p.life <= 0) {
         this.sparks.splice(i, 1);
       }
+    }
+
+    // 冲击波更新
+    for (let i = this.shatterShockwaves.length - 1; i >= 0; i--) {
+      const sw = this.shatterShockwaves[i];
+      sw.radius += sw.speed * dt;
+      sw.alpha -= dt / sw.maxLife;
+      if (sw.alpha <= 0) {
+        this.shatterShockwaves.splice(i, 1);
+      }
+    }
+
+    // 碎裂外壳碎片更新
+    for (let i = this.shatterShards.length - 1; i >= 0; i--) {
+      const sh = this.shatterShards[i];
+      sh.dist += 80 * dt;
+      sh.rot += sh.rotSpeed * dt;
+      sh.alpha = Math.max(0, 1 - (this.shatterTimer / this.shatterDuration));
+    }
+
+    // 处于 0.3 秒碎盾动画过渡期
+    if (this.isShattering) {
+      this.shatterTimer += dt;
+      // 快速震颤自旋
+      this.currentAngle = (this.currentAngle + this.rotationSpeed * 2.2 * dt) % (Math.PI * 2);
+
+      // 间歇喷涌崩解微粒子
+      if (Math.random() < 0.6) {
+        const randA = Math.random() * Math.PI * 2;
+        this.sparks.push({
+          x: this.enemy.x + Math.cos(randA) * (this.radius + (Math.random() - 0.5) * 16),
+          y: this.enemy.y + Math.sin(randA) * (this.radius + (Math.random() - 0.5) * 16),
+          vx: Math.cos(randA) * (80 + Math.random() * 120),
+          vy: Math.sin(randA) * (80 + Math.random() * 120),
+          life: 0.2 + Math.random() * 0.15,
+          color: Math.random() > 0.4 ? '#ffaa00' : '#ff2a6d'
+        });
+      }
+
+      // 0.3s 碎盾动画结束，护盾彻底消散，进入虚弱暴露期！
+      if (this.shatterTimer >= this.shatterDuration) {
+        this.isShattering = false;
+        this.isBroken = true;
+        this.rechargeTimer = 0;
+        audio.playShieldCollapse();
+        this.createFinalCollapseBurst();
+      }
+      return;
     }
 
     if (this.isBroken) {
@@ -74,7 +135,19 @@ export class Shield {
     const dy = bullet.y - this.enemy.y;
     const dist = Math.hypot(dx, dy);
 
-    if (dist <= this.radius + 8 && dist >= this.radius - 16) {
+    // 碎盾动画期间：无法穿透，不受伤害，击中直接引爆偏转火花并销毁子弹
+    if (this.isShattering) {
+      if (dist <= this.radius + 14) {
+        bullet.alive = false;
+        this.createSparks(bullet.x, bullet.y, '#ffaa00');
+        audio.playShieldDeflect();
+        return true;
+      }
+      return false;
+    }
+
+    // 护盾未彻底破裂状态下：拦截所有到达或穿入护盾判定区的子弹，绝对禁止穿盾偷打核心！
+    if (dist <= this.radius + 8) {
       const hitAngle = Math.atan2(dy, dx);
       this.onBulletHitShield(hitAngle, bullet, frequencyMeter, now);
       return true;
@@ -135,15 +208,50 @@ export class Shield {
   checkAllWeakpoints() {
     const allDestroyed = this.weakpoints.every(wp => !wp);
     if (allDestroyed) {
-      this.isBroken = true;
-      this.rechargeTimer = 0;
-      audio.playShieldBreak();
-      this.createBreakExplosion();
+      this.startShatter();
+    }
+  }
+
+  startShatter() {
+    this.isShattering = true;
+    this.shatterTimer = 0;
+    this.isBroken = false;
+    this.justBroken = true;
+    audio.playShieldBreak();
+    this.createBreakExplosion();
+
+    // 初始冲击波能量环
+    this.shatterShockwaves = [{
+      radius: this.radius * 0.85,
+      maxRadius: this.radius * 1.5,
+      speed: 180,
+      alpha: 1.0,
+      maxLife: 0.3
+    }];
+
+    // 生成碎裂外壳几何碎片
+    this.shatterShards = [];
+    const shardCount = Math.max(12, this.count * 3);
+    for (let i = 0; i < shardCount; i++) {
+      const a = (i * Math.PI * 2) / shardCount + (Math.random() - 0.5) * 0.2;
+      const speed = 60 + Math.random() * 90;
+      this.shatterShards.push({
+        angle: a,
+        dist: this.radius,
+        vx: Math.cos(a) * speed,
+        vy: Math.sin(a) * speed,
+        rot: Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 12,
+        size: 5 + Math.random() * 5,
+        alpha: 1.0
+      });
     }
   }
 
   restore() {
     this.isBroken = false;
+    this.isShattering = false;
+    this.shatterTimer = 0;
     this.rechargeTimer = 0;
     this.weakpoints.fill(true);
     this.isRotating = true;
@@ -179,6 +287,21 @@ export class Shield {
     }
   }
 
+  createFinalCollapseBurst() {
+    for (let i = 0; i < 30; i++) {
+      const angle = (i * Math.PI * 2) / 30;
+      const speed = 140 + Math.random() * 160;
+      this.sparks.push({
+        x: this.enemy.x + Math.cos(angle) * this.radius,
+        y: this.enemy.y + Math.sin(angle) * this.radius,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 0.4 + Math.random() * 0.2,
+        color: '#ff2a6d'
+      });
+    }
+  }
+
   render(ctx) {
     for (const p of this.sparks) {
       ctx.fillStyle = p.color;
@@ -189,6 +312,76 @@ export class Shield {
       ctx.fill();
     }
     ctx.shadowBlur = 0;
+
+    // 渲染碎盾冲击波
+    for (const sw of this.shatterShockwaves) {
+      ctx.save();
+      ctx.strokeStyle = `rgba(255, 170, 0, ${sw.alpha * 0.8})`;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#ffaa00';
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.arc(this.enemy.x, this.enemy.y, sw.radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 碎裂过渡态渲染
+    if (this.isShattering) {
+      const shatterRatio = this.shatterTimer / this.shatterDuration; // 0 -> 1
+      const alpha = Math.max(0, 1 - shatterRatio * 0.6);
+      ctx.save();
+
+      // 1. 碎裂环与电弧抖动
+      ctx.strokeStyle = `rgba(255, 42, 109, ${alpha})`;
+      ctx.shadowColor = '#ffaa00';
+      ctx.shadowBlur = 18;
+      ctx.lineWidth = 3.5;
+
+      const segments = this.count * 3;
+      const angleStep = (Math.PI * 2) / segments;
+      for (let i = 0; i < segments; i++) {
+        // 抖动裂痕
+        const jitterR = this.radius + (Math.sin(this.shatterTimer * 40 + i) * 4);
+        const startA = this.currentAngle + i * angleStep + 0.08;
+        const endA = this.currentAngle + (i + 1) * angleStep - 0.08;
+        ctx.beginPath();
+        ctx.arc(this.enemy.x, this.enemy.y, jitterR, startA, endA);
+        ctx.stroke();
+      }
+
+      // 2. 绘制向外扩散崩解的晶格破片
+      for (const sh of this.shatterShards) {
+        const sx = this.enemy.x + Math.cos(sh.angle) * sh.dist;
+        const sy = this.enemy.y + Math.sin(sh.angle) * sh.dist;
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(sh.rot);
+        ctx.fillStyle = `rgba(255, 234, 112, ${sh.alpha})`;
+        ctx.strokeStyle = `rgba(255, 42, 109, ${sh.alpha})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-sh.size, -sh.size / 2);
+        ctx.lineTo(sh.size, 0);
+        ctx.lineTo(-sh.size / 2, sh.size);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 3. 过载核心能量脉冲光晕
+      const pulseSize = this.radius * (0.8 + 0.25 * Math.sin(this.shatterTimer * 30));
+      ctx.strokeStyle = `rgba(255, 170, 0, ${0.4 * (1 - shatterRatio)})`;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 6]);
+      ctx.beginPath();
+      ctx.arc(this.enemy.x, this.enemy.y, pulseSize, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.restore();
+      return;
+    }
 
     if (this.isBroken) {
       const progress = this.rechargeTimer / this.rechargeDuration;
@@ -262,6 +455,11 @@ export class Shield {
   reset() {
     this.weakpoints.fill(true);
     this.isBroken = false;
+    this.isShattering = false;
+    this.shatterTimer = 0;
+    this.justBroken = false;
+    this.shatterShockwaves = [];
+    this.shatterShards = [];
     this.rechargeTimer = 0;
     this.isRotating = false;
     this.firstHitRegistered = false;

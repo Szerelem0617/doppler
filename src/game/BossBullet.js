@@ -62,8 +62,10 @@ export class BossBullet {
     this.x += this.vx * dt;
     this.y += this.vy * dt;
 
-    // 屏幕外销毁
-    if (this.x < -60 || this.x > window.innerWidth + 60 || this.y < -60 || this.y > window.innerHeight + 60) {
+    // 虚拟 800x800 竞技场屏幕外销毁
+    const boundW = 800;
+    const boundH = 800;
+    if (this.x < -60 || this.x > boundW + 60 || this.y < -60 || this.y > boundH + 60) {
       this.alive = false;
     }
   }

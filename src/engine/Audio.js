@@ -86,6 +86,48 @@ class SoundEngine {
     osc.stop(t + 0.4);
   }
 
+  // 碎盾期间子弹偏转拦截音效 (高频清脆弹射)
+  playShieldDeflect() {
+    if (!this.initialized) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(650, t);
+    osc.frequency.exponentialRampToValueAtTime(120, t + 0.05);
+
+    gain.gain.setValueAtTime(0.2, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(t);
+    osc.stop(t + 0.05);
+  }
+
+  // 碎盾动画结束、护盾彻底崩解虚弱音效
+  playShieldCollapse() {
+    if (!this.initialized) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(160, t);
+    osc.frequency.exponentialRampToValueAtTime(45, t + 0.18);
+
+    gain.gain.setValueAtTime(0.28, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(t);
+    osc.stop(t + 0.18);
+  }
+
   // 敌人受击：音调随受击频率提升
   playTargetHit(frequencyHz = 2.0) {
     if (!this.initialized) return;

@@ -42,11 +42,11 @@ body, html {
 
 #game-canvas {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
   z-index: 1;
+  box-shadow: 0 0 50px rgba(0, 240, 255, 0.12), 0 0 100px rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  border-radius: 6px;
+  background: radial-gradient(circle at 50% 45%, #0d1424 0%, #06080e 70%, #030407 100%);
 }
 
 /* 顶部导航与关卡选择栏 */
@@ -287,6 +287,17 @@ body, html {
   background: #555;
   box-shadow: none;
   animation: none;
+}
+
+.status-dot.shield-shattering {
+  background: #ff2a6d;
+  box-shadow: 0 0 10px #ff2a6d, 0 0 18px #ffaa00;
+  animation: pulse-shatter 0.12s infinite alternate;
+}
+
+@keyframes pulse-shatter {
+  0% { transform: scale(0.85); opacity: 0.7; }
+  100% { transform: scale(1.35); opacity: 1; }
 }
 
 .shield-recharge-track {
@@ -740,7 +751,7 @@ body, html {
   to { transform: scale(1.04); border-color: #00ffff; box-shadow: 0 0 18px var(--cyan-glow); }
 }
 
-/* 覆盖卡片弹窗 */
+/* 覆盖卡片弹窗 (胜利与失败结算) */
 .overlay {
   position: absolute;
   top: 0;
@@ -753,12 +764,14 @@ body, html {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 100;
+  z-index: 200;
   transition: opacity 0.3s ease;
 }
 
 .overlay.hidden {
   opacity: 0;
+  visibility: hidden;
+  display: none !important;
   pointer-events: none;
 }
 
@@ -840,8 +853,10 @@ body, html {
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 50;
-  background: radial-gradient(circle at 50% 30%, rgba(10, 20, 42, 0.94) 0%, rgba(3, 6, 14, 0.98) 100%);
+  z-index: 150;
+  background: radial-gradient(circle at 50% 30%, rgba(10, 18, 36, 0.98) 0%, rgba(4, 7, 15, 0.99) 100%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -855,6 +870,7 @@ body, html {
 .mission-hub.hidden {
   opacity: 0;
   visibility: hidden;
+  display: none !important;
   pointer-events: none;
 }
 
@@ -1011,6 +1027,33 @@ body, html {
   color: #8899aa;
 }
 
+.card-btn-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.card-tas-btn {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #ffaa00;
+  background: rgba(255, 170, 0, 0.12);
+  border: 1px solid rgba(255, 170, 0, 0.4);
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.card-tas-btn:hover {
+  background: rgba(255, 170, 0, 0.25);
+  border-color: #ffaa00;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(255, 170, 0, 0.5);
+}
+
 .card-play-btn {
   font-family: var(--font-display);
   font-size: 11px;
@@ -1021,6 +1064,7 @@ body, html {
   border: none;
   padding: 5px 14px;
   border-radius: 4px;
+  cursor: pointer;
   transition: all 0.2s;
 }
 

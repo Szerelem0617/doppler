@@ -92,22 +92,15 @@
         <div class="skill-slot" id="slot-skill1">
           <div class="skill-key">J</div>
           <div class="skill-info">
-            <div class="skill-name">自动射击</div>
-            <div class="skill-status fire-off" id="skill1-status">CEASE [OFF]</div>
+            <div class="skill-name">折跃闪现</div>
+            <div class="skill-status" id="skill1-status">READY</div>
           </div>
         </div>
         <div class="skill-slot" id="slot-skill2">
           <div class="skill-key">K</div>
           <div class="skill-info">
-            <div class="skill-name">折跃闪现</div>
+            <div class="skill-name">反射力场</div>
             <div class="skill-status" id="skill2-status">READY</div>
-          </div>
-        </div>
-        <div class="skill-slot" id="slot-skill3">
-          <div class="skill-key">L</div>
-          <div class="skill-info">
-            <div class="skill-name">力场护盾</div>
-            <div class="skill-status" id="skill3-status">READY</div>
           </div>
         </div>
       </div>
@@ -138,15 +131,11 @@
           <div class="freeze-col skills-col">
             <div class="freeze-skill-row">
               <span class="freeze-key skill-badge">J</span>
-              <span class="freeze-skill-label">切换射击 (按 J 开启/关闭)</span>
-            </div>
-            <div class="freeze-skill-row">
-              <span class="freeze-key skill-badge">K</span>
               <span class="freeze-skill-label">折跃闪现 (300px 超距瞬移)</span>
             </div>
             <div class="freeze-skill-row">
-              <span class="freeze-key skill-badge">L</span>
-              <span class="freeze-skill-label">力场护盾 (反弹弹幕 & 绝对防御)</span>
+              <span class="freeze-key skill-badge">K</span>
+              <span class="freeze-skill-label">反射力场 (反弹弹幕 & 绝对防御)</span>
             </div>
           </div>
         </div>
@@ -169,9 +158,8 @@
 
       <div class="controls-hint" id="controls-hint">
         <span class="key-cap">W</span><span class="key-cap">A</span><span class="key-cap">S</span><span class="key-cap">D</span> 推进 &nbsp;|&nbsp;
-        <span class="key-cap">J</span> 开启/关闭射击 &nbsp;|&nbsp;
-        <span class="key-cap">K</span> 折跃闪现 &nbsp;|&nbsp;
-        <span class="key-cap">L</span> 反射护盾
+        <span class="key-cap">J</span> 折跃闪现 &nbsp;|&nbsp;
+        <span class="key-cap">K</span> 反射护盾
       </div>
     </div>
 
@@ -189,7 +177,7 @@
     </div>
 
     <!-- 游戏开始与结算遮罩弹窗 -->
-    <div class="overlay hidden" id="game-overlay">
+    <div class="overlay hidden" id="game-overlay" style="display: none;">
       <div class="overlay-card">
         <div class="card-badge" id="overlay-badge">MISSION 01</div>
         <h1 class="card-title" id="overlay-title">多普勒突击</h1>

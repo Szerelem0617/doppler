@@ -14,9 +14,9 @@ export class Enemy {
     this.radius = 28;
     this.isDead = false;
 
-    // 旋转护盾 (统一采用 6 弱点静止同步基准，破盾暴露 1.4s)
+    // 旋转护盾 (统一采用 6 弱点静止同步基准，破盾暴露 2.0s)
     this.shield = new Shield(this, 6, 78, 0.22);
-    this.shield.rechargeDuration = 1.4;
+    this.shield.rechargeDuration = 2.0;
 
     // 视觉动画参数
     this.rotation = 0;
@@ -45,8 +45,8 @@ export class Enemy {
       }
     }
 
-    // 护盾内部入侵判定：若护盾未破且玩家进入护盾内部，0.35s 后触发弹簧拳轰飞
-    if (this.shield && !this.shield.isBroken && player && !player.isDead) {
+    // 护盾内部入侵判定：若护盾未破且未处于碎裂顿挫中，且玩家进入护盾内部，0.35s 后触发弹簧拳轰飞
+    if (this.shield && !this.shield.isBroken && !this.shield.isShattering && player && !player.isDead) {
       const distToPlayer = Math.hypot(player.x - this.x, player.y - this.y);
       if (distToPlayer <= this.shield.radius) {
         this.invadeTimer += dt;

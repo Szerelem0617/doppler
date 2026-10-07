@@ -1,0 +1,26 @@
+{
+  "summary": {
+    "section1": {
+      "duration": 3.383333333333326,
+      "hp": 3
+    },
+    "section2": {
+      "duration": 3.449999999999988,
+      "hp": 3
+    },
+    "section3": {
+      "duration": 3.900000000000132,
+      "hp": 3
+    },
+    "section4": {
+      "duration": 3.066666666666819,
+      "hp": 2
+    },
+    "section5": {
+      "duration": 0.7000000000000348,
+      "hp": 1
+    },
+    "totalTime": 14.5000000000003,
+    "finalHp": 1
+  }
+}

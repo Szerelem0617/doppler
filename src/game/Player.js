@@ -10,7 +10,7 @@ export class Player {
 
     this.vx = 0;
     this.vy = 0;
-    this.speed = 330; // 战机推进速度 330px/s
+    this.speed = 220; // 战机推进速度 220px/s (限制普通移动最高达 7 频率，杜绝无技能达到 8 频率)
     this.angle = -Math.PI / 2;
     this.radius = 16; // 碰撞判定半径
 
@@ -33,10 +33,8 @@ export class Player {
     this.thrusterParticles = []; // 尾喷粒子
     this.afterimages = []; // 闪现瞬移残影
 
-    // 战术火控模式：J 键切换 (开局默认不射击，需按 J 开启)
-    this.autoFire = false;
-    this.toggleFireCooldown = 0.35; // J 键切换冷却，防止无限制高频切换篡改频率
-    this.toggleFireCdTimer = 0;
+    // 战机自动火控模式：全程常驻开启，固有射频 4.55 Hz (每 0.22s 一发自导激光)
+    this.autoFire = true;
 
     // 强力击飞物理系统 (Boss 机械弹簧拳与移动冲撞等速击退)
     this.isKnockedBack = false;
@@ -45,18 +43,32 @@ export class Player {
     this.knockbackTimer = 0;
     this.knockbackDuration = 0.35;
 
-    // 战术技能 2: 折跃闪现 (K 触发) - 大幅增加冷却
-    this.skill2Cooldown = 7.5;
-    this.skill2CdTimer = 0;
+    // 战术技能 1: 折跃闪现 (J 键触发)
+    this.blinkCooldown = 7.5;
+    this.blinkCdTimer = 0;
     this.blinkDistance = 300;
 
-    // 战术技能 1: 反射护盾 (L 触发) - 大幅增加冷却
-    this.skill1Cooldown = 9.0;
-    this.skill1CdTimer = 0;
+    // 战术技能 2: 反射力场护盾 (K 键触发)
+    this.shieldCooldown = 10.0;
+    this.shieldCdTimer = 0;
     this.skill1Duration = 1.0;
     this.skill1Timer = 0;
-    this.skill1Active = false;
+    this.skill1Active = false; // 力场是否正处于激活状态 (保持变量名兼容 BossBullet.js)
+    this.isInsideShield = false; // 是否显式通过折跃闪现进入了护盾内部 (严禁肉身挤盾穿透)
   }
+
+  // 兼容别名属性
+  get skill2CdTimer() { return this.blinkCdTimer; }
+  set skill2CdTimer(v) { this.blinkCdTimer = v; }
+  get skill2Cooldown() { return this.blinkCooldown; }
+  get skill1CdTimer() { return this.shieldCdTimer; }
+  set skill1CdTimer(v) { this.shieldCdTimer = v; }
+  get skill1Cooldown() { return this.shieldCooldown; }
+  get shieldActive() { return this.skill1Active; }
+  set shieldActive(v) { this.skill1Active = v; }
+  get shieldTimer() { return this.skill1Timer; }
+  set shieldTimer(v) { this.skill1Timer = v; }
+  get shieldDuration() { return this.skill1Duration; }
 
   setEnemy(enemy) {
     this.enemy = enemy;
@@ -97,6 +109,7 @@ export class Player {
     this.knockbackTimer = duration;
     this.knockbackMode = mode;
     this.isKnockedBack = true;
+    this.isInsideShield = false; // 被弹簧拳击飞，重置内部状态
     this.createHitSparks();
   }
 
@@ -121,12 +134,12 @@ export class Player {
     }
   }
 
-  // 开启 L 键力场盾
+  // 开启 K 键力场盾
   activateShield() {
-    if (this.skill1CdTimer <= 0) {
+    if (this.shieldCdTimer <= 0) {
       this.skill1Active = true;
       this.skill1Timer = this.skill1Duration;
-      this.skill1CdTimer = this.skill1Cooldown;
+      this.shieldCdTimer = this.shieldCooldown;
       audio.playReflectShield();
       return true;
     }
@@ -135,9 +148,8 @@ export class Player {
 
   update(dt, input, canvasWidth, canvasHeight, bossBullets = null) {
     // 技能冷却更新
-    if (this.skill1CdTimer > 0) this.skill1CdTimer = Math.max(0, this.skill1CdTimer - dt);
-    if (this.skill2CdTimer > 0) this.skill2CdTimer = Math.max(0, this.skill2CdTimer - dt);
-    if (this.toggleFireCdTimer > 0) this.toggleFireCdTimer = Math.max(0, this.toggleFireCdTimer - dt);
+    if (this.blinkCdTimer > 0) this.blinkCdTimer = Math.max(0, this.blinkCdTimer - dt);
+    if (this.shieldCdTimer > 0) this.shieldCdTimer = Math.max(0, this.shieldCdTimer - dt);
     if (this.invincibleTimer > 0) this.invincibleTimer = Math.max(0, this.invincibleTimer - dt);
 
     // 受击火花粒子更新
@@ -151,26 +163,12 @@ export class Player {
       }
     }
 
-    // L 键力场护盾持续时间更新
+    // K 键力场护盾持续时间更新
     if (this.skill1Active) {
       this.skill1Timer -= dt;
       if (this.skill1Timer <= 0) {
         this.skill1Active = false;
       }
-    }
-
-    // 战术火控模式切换 (J 键切换，带 0.35s 冷却，杜绝肆意改频)
-    if (input.consumeToggleFire && input.consumeToggleFire()) {
-      if (this.toggleFireCdTimer <= 0) {
-        this.autoFire = !this.autoFire;
-        this.toggleFireCdTimer = this.toggleFireCooldown;
-        audio.playToggleFire(this.autoFire);
-      }
-    }
-
-    // 战术技能 1: 反射护盾 (L 键触发)
-    if (input.consumeSkill3 && input.consumeSkill3()) {
-      this.activateShield();
     }
 
     // 强力击飞物理位移 (支持 CONSTANT 匀速击退与 DECAY 阻尼衰减)
@@ -194,17 +192,30 @@ export class Player {
     this.vx = move.x * this.speed;
     this.vy = move.y * this.speed;
 
-    // 技能 2 (K 键触发超距折跃闪现，允许直插护盾内部)
-    if (input.consumeSkill2 && input.consumeSkill2()) {
-      if (this.skill2CdTimer <= 0) {
+    // 技能 1: J 键触发折跃闪现 (直插护盾或战术位移)
+    if (
+      (input.consumeBlink && input.consumeBlink()) ||
+      (input.consumeSkill1 && input.consumeSkill1()) ||
+      (!input.consumeBlink && !input.consumeSkill1 && input.consumeSkill2 && input.consumeSkill2())
+    ) {
+      if (this.blinkCdTimer <= 0) {
         this.executeBlink(move, canvasWidth, canvasHeight);
       }
+    }
+
+    // 技能 2: K 键触发反射护盾
+    if (
+      (input.consumeShield && input.consumeShield()) ||
+      (input.consumeSkill3 && input.consumeSkill3()) ||
+      (!input.consumeShield && !input.consumeSkill3 && input.consumeSkill2 && input.consumeSkill2())
+    ) {
+      this.activateShield();
     }
 
     this.x += this.vx * dt;
     this.y += this.vy * dt;
 
-    // 护盾物理阻挡机制：护盾未破损时，作为一个实体力场环阻挡玩家前进，严禁直接肉身穿透！
+    // 护盾物理阻挡机制：护盾未破损时，作为一个实体力场环严格阻挡玩家常规推进，严禁直接肉身怼盾穿透！
     if (this.enemy && this.enemy.shield && !this.enemy.shield.isBroken) {
       const shieldCenter = { x: this.enemy.x, y: this.enemy.y };
       const dx = this.x - shieldCenter.x;
@@ -212,12 +223,19 @@ export class Player {
       const dist = Math.hypot(dx, dy);
       const minDistance = this.enemy.shield.radius + this.radius; // 护盾外壁 + 战机判定半径
 
-      // 仅当玩家原本在护盾外壁附近 (例如 dist > radius * 0.75) 试图强行穿进内圈时，阻挡在外壁；
-      // 若玩家使用 K 闪现瞬移到了护盾深处 (dist <= radius * 0.75) 诱骗弹簧拳，则允许在内圈被击飞或移动
-      if (dist < minDistance && dist > this.enemy.shield.radius * 0.75) {
-        this.x = shieldCenter.x + (dx / dist) * minDistance;
-        this.y = shieldCenter.y + (dy / dist) * minDistance;
+      // 若战机处于外侧或已被击退离开内圈，清除内部状态
+      if (dist >= this.enemy.shield.radius) {
+        this.isInsideShield = false;
       }
+
+      // 未经折跃闪现瞬移进入的常规移动，一律严格阻挡在外壁，绝不允许任何怼盾边缘穿透！
+      if (!this.isInsideShield && dist < minDistance) {
+        const d = dist || 1;
+        this.x = shieldCenter.x + (dx / d) * minDistance;
+        this.y = shieldCenter.y + (dy / d) * minDistance;
+      }
+    } else {
+      this.isInsideShield = false;
     }
 
     // 全局边界约束 (放开下半区死锁，允许闪现至全屏幕战区)
@@ -293,7 +311,7 @@ export class Player {
   // 执行瞬移闪现
   executeBlink(move, canvasWidth, canvasHeight) {
     audio.playBlink();
-    this.skill2CdTimer = this.skill2Cooldown;
+    this.blinkCdTimer = this.blinkCooldown;
 
     // 记录起点残影
     this.createAfterimage();
@@ -308,6 +326,7 @@ export class Player {
       if (this.enemy && this.enemy.shield && !this.enemy.shield.isBroken) {
         this.x = this.enemy.x;
         this.y = this.enemy.y + Math.max(24, this.enemy.shield.radius * 0.45);
+        this.isInsideShield = true; // 瞬移进入护盾内部
         this.afterimages.push({
           x: (startX + this.x) / 2,
           y: (startY + this.y) / 2,
@@ -505,16 +524,16 @@ export class Player {
     this.wavefronts = [];
     this.thrusterParticles = [];
     this.afterimages = [];
-    this.skill1CdTimer = 0;
+    this.blinkCdTimer = 0;
+    this.shieldCdTimer = 0;
     this.skill1Timer = 0;
     this.skill1Active = false;
-    this.skill2CdTimer = 0;
-    this.toggleFireCdTimer = 0;
+    this.isInsideShield = false;
     this.isKnockedBack = false;
     this.knockbackVx = 0;
     this.knockbackVy = 0;
     this.knockbackTimer = 0;
-    this.autoFire = false;
+    this.autoFire = true;
     this.fireTimer = 0;
   }
 }
