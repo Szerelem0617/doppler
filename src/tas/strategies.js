@@ -260,26 +260,25 @@ export const STAGE_STRATEGIES = {
           }
         }
       }
-      // Phase 2: 8 弱点, 7 血 (前置位 W 前推 0.22s 避开余弹 -> A+W 绕盾连碎前 4 盾 (WP 0, 7, 6, 5) -> 0.95s W 向上闪现 -> W+D 斜切连碎后 4 盾 (WP 4, 3, 2, 1) -> 平滑进圈 targetY=175)
+      // Phase 2: 8 弱点, 7 血 (前置位 W 前推 0.22s -> A+W 绕盾 0.88s 连碎前 4 盾 (WP 0, 7, 6, 5) -> 1.10s W 闪现 -> W 正冲连碎后 4 盾 (WP 4, 3, 2, 1)，8 发 100% 连击 0 偏转空弹！)
       else if (phase === 2) {
         const p2Time = state.p2StartTime ? elapsed - state.p2StartTime : 0;
         if (!enemy.shield.isBroken && !enemy.shield.isShattering) {
           if (p2Time < 0.22) {
             // 开局 0.22s：保持 W 前推对正，待 Phase 1 残余弹幕飞掠穿过
             inputs.keys['KeyW'] = true;
-          } else if (p2Time < 0.95) {
-            // 前 4 盾：A+W 逆时针贴盾绕行，连碎前 4 个弱点 (WP 0, 7, 6, 5)
+          } else if (p2Time < 0.22 + 0.88) {
+            // 前 4 盾：A+W 贴盾绕行，连碎前 4 个弱点 (WP 0, 7, 6, 5)
             inputs.keys['KeyA'] = true;
             inputs.keys['KeyW'] = true;
-          } else if (!state.p2Blinked && p2Time >= 0.95) {
-            // 0.95s 节点：按下 W 向上折跃瞬移，顺应自转完成跳角位移
+          } else if (!state.p2Blinked && p2Time >= 0.22 + 0.88) {
+            // 1.10s 节点：按下 W 向上折跃瞬移，顺应自转完成跳角位移
             inputs.keys['KeyW'] = true;
             inputs.actions.push('skill2');
             state.p2Blinked = true;
           } else {
-            // 闪现后：W+D 斜切顺应顺时针自转，后 4 发连碎后 4 个弱点 (WP 4, 3, 2, 1)！
+            // 闪现后：W 前推连碎后 4 个弱点 (WP 4, 3, 2, 1)，发发全中 0 空弹！
             inputs.keys['KeyW'] = true;
-            inputs.keys['KeyD'] = true;
           }
         } else if (enemy.shield.isShattering) {
           // 碎盾顿挫无敌期：平滑向敌机 x 轴对齐，保持在盾外
@@ -327,6 +326,12 @@ export const STAGE_STRATEGIES = {
             const holdY = 540;
             if (player.y < holdY - 4) inputs.keys['KeyS'] = true;
             else if (player.y > holdY + 4) inputs.keys['KeyW'] = true;
+
+            // 弹簧拳击飞落地后，维持在经过严格物理测算的黄金瞄准坐标 targetX = 338 (稳定区间 330~345)
+            // 使得 9 弱点盾顺时针旋转 (40° 密位) 依次将每个存活弱点 (0->7->5->3->2->1->8->6->4) 严密送入弹道，实现 0 偏转空弹！
+            const targetX = 338;
+            if (player.x > targetX + 3) inputs.keys['KeyA'] = true;
+            else if (player.x < targetX - 3) inputs.keys['KeyD'] = true;
           } else if (enemy.shield.isBroken || enemy.shield.isShattering) {
             inputs.keys['KeyW'] = true;
           } else if (state.p4ShieldRestoredTime) {

@@ -2,7 +2,7 @@ import { Boss } from '../src/game/Boss.js';
 import { Player } from '../src/game/Player.js';
 import { STAGE_STRATEGIES } from '../src/tas/strategies.js';
 
-function testFullRunFinal() {
+function testFullRunP4A() {
   const strat = STAGE_STRATEGIES['2-boss'];
   const state = strat.init();
   const player = new Player(400, 600);
@@ -12,46 +12,18 @@ function testFullRunFinal() {
   const ctx = { player, enemy: boss };
   let elapsed = 0;
   const dt = 1 / 60;
-  
   const stats = { byPhase: {} };
 
-  while (elapsed < 25 && !boss.isDead) {
+  while (elapsed < 24 && !boss.isDead && !player.isDead) {
     const inputs = strat.update(ctx, elapsed, state);
 
-    if (boss.currentPhaseIndex === 2) {
-      const p2Time = state.p2StartTime ? elapsed - state.p2StartTime : 0;
-      if (!boss.shield.isBroken && !boss.shield.isShattering) {
-        inputs.keys = {};
-        inputs.actions = [];
-        const remainingWp = boss.shield.weakpoints ? boss.shield.weakpoints.filter(Boolean).length : 0;
-
-        if (p2Time < 0.22) {
-          inputs.keys['KeyW'] = true;
-        } else if (p2Time < 0.78) {
+    if (boss.currentPhaseIndex === 4) {
+      const p4Time = state.p4StartTime ? elapsed - state.p4StartTime : 0;
+      const punchDelay = boss.invadeThreshold || 0.44;
+      if (p4Time >= punchDelay + 0.05) {
+        if (!boss.shield.isBroken && !boss.shield.isShattering && !state.p4ShieldWasBroken) {
           inputs.keys['KeyA'] = true;
-          inputs.keys['KeyW'] = true;
-        } else if (!state.p2BlinkedOpt && p2Time >= 0.78) {
-          inputs.keys['KeyW'] = true;
-          inputs.actions.push('skill2');
-          state.p2BlinkedOpt = true;
-        } else if (remainingWp > 1) {
-          inputs.keys['KeyW'] = true;
-          inputs.keys['KeyD'] = true;
-        } else {
-          inputs.keys['KeyS'] = true;
         }
-      } else if (boss.shield.isShattering) {
-        inputs.keys = {};
-        if (player.x < boss.x - 2) inputs.keys['KeyD'] = true;
-        else if (player.x > boss.x + 2) inputs.keys['KeyA'] = true;
-      } else {
-        inputs.keys = {};
-        const targetY = boss.y + 45;
-        const targetX = boss.x;
-        if (player.y > targetY + 2) inputs.keys['KeyW'] = true;
-        else if (player.y < targetY - 2) inputs.keys['KeyS'] = true;
-        if (player.x < targetX - 2) inputs.keys['KeyD'] = true;
-        else if (player.x > targetX + 2) inputs.keys['KeyA'] = true;
       }
     }
 
@@ -150,7 +122,7 @@ function testFullRunFinal() {
     elapsed += dt;
   }
 
-  console.log(`\nRun finished at ${elapsed.toFixed(2)}s, Boss dead: ${boss.isDead}`);
+  console.log(`\nRun finished at ${elapsed.toFixed(2)}s, Boss dead: ${boss.isDead}, Player alive: ${!player.isDead}, HP: ${player.hp}`);
   console.log('Statistics by Phase:');
   for (const ph in stats.byPhase) {
     const s = stats.byPhase[ph];
@@ -158,4 +130,4 @@ function testFullRunFinal() {
   }
 }
 
-testFullRunFinal();
+testFullRunP4A();
