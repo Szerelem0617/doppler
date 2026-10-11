@@ -63,12 +63,12 @@ export const STAGE_STRATEGIES = {
     }
   },
 
-  // 3. 2-s5: 5 弱点 (72° 回环机动)
-  // 策略：开局开启 J 射击 -> S 后退拉大到达间隔 + A 逆时针环绕抵消多余角位移 -> 5 发依次连破 -> 破盾后 W 前冲斩杀
+  // 3. 2-s5: 5 弱点 (72° 严格红移破盾)
+  // 策略：0.05s W+J 前折跃至中场建立后撤纵深 -> S 全速恒退产生精确多普勒红移 (0.264s / 72°) -> 5 发 100% 连续连破 5 盾 -> 破盾后 W 前冲斩杀
   '2-s5': {
-    name: 'STAGE 2-s5 (5弱点 · S后退+A环绕 72°)',
+    name: 'STAGE 2-s5 (5弱点 · W前折跃 + S恒速后撤 72°)',
     init() {
-      return {};
+      return { hasBlinked: false };
     },
     update(ctx, elapsed, state) {
       const { player, enemy } = ctx;
@@ -78,13 +78,21 @@ export const STAGE_STRATEGIES = {
         inputs.actions.push('toggleFire');
       }
 
+      // 开局 0.05s 向前瞬移折跃至中场，建立充分的向后滑退多普勒纵深
+      if (!state.hasBlinked && elapsed >= 0.05) {
+        inputs.keys['KeyW'] = true;
+        inputs.actions.push('skill2');
+        state.hasBlinked = true;
+        return inputs;
+      }
+
       if (enemy.shield.isShattering) {
         inputs.keys['KeyS'] = true;
       } else if (enemy.shield.isBroken) {
         inputs.keys['KeyW'] = true;
       } else {
+        // 破盾阶段：保持严格正向 S 恒速滑退，实现 5 发 100% 连续破盾，0 偏转空弹！
         inputs.keys['KeyS'] = true;
-        inputs.keys['KeyA'] = true;
       }
 
       return inputs;
@@ -180,25 +188,24 @@ export const STAGE_STRATEGIES = {
 
   // 7. 2-boss: 五阶段连击大考 (7 -> 5 -> 8 -> 4 -> 9)
   // 严格依据阶段速通规划实现：
-  // Phase 0 (7 弱点, 7 血): W 前推破盾 -> 破盾后闪 (S+K) -> W 前推清空血量 (0 受伤，结束于前置位)
-  // Phase 1 (5 弱点, 7 血): 从前置位 S 后撤破盾 -> 破盾开 L 护盾 + S 后撤补齐输出 (0 受伤)
-  // Phase 2 (8 弱点, 8 血): W 前推(4WP) + A+K 左闪(4WP) -> 破盾后冲刺进 Boss 内圈 (0 受伤，结束于圈内)
-  // Phase 3 (4 弱点, 9 血): 圈内弹簧拳击飞 (-1 血) -> 550px/s 恒速滑退破 4 盾 -> W 前推 + W+K 前闪清空 9 血 (-1 受伤，结束于前置位)
+  // Phase 0 (7 弱点, 7 血): W 前推破盾 -> 破盾后闪 (S+J) 避开狙击 -> W 前推清空血量 (0 伤，结束于前置位)
+  // Phase 1 (5 弱点, 7 血): 从前置位 S 后撤破 5 盾 (220px/s 严格吻合 72° 红移，5 发 0 空弹) -> 破盾后 W 冲刺灌伤微移躲狙 (0 伤，结束于前置位)
+  // Phase 2 (8 弱点, 7 血): 从前置位 A+W 贴盾逆时针绕行连碎前 4 盾 (WP 0, 7, 6, 5) -> 0.95s W 向上折跃瞬移 -> W+D 斜切顺应顺时针自转连碎后 4 盾 (WP 4, 3, 2, 1) -> 8 发全中 0 空弹！-> 碎盾后平滑走进内圈 targetY = 175 (0 伤，定格圈内)
+  // Phase 3 (4 弱点, 9 血): 圈内弹簧拳击飞 (-1 血) -> 550px/s 恒速滑退破 4 盾 -> W 前推回 targetY = 175 灌入 7 伤，平滑停留在内圈 (-1 受伤，结束于前置位)
   // Phase 4 (9 弱点, 11 血): Boss 密集弹幕雨 -> W 前冲硬吃子弹 (-1 血触发无敌) -> 瞬移闪现入圈 + 开 L 护盾反弹 -> 反弹弹幕+极频激光斩杀 Boss (HP=1 存活)
   '2-boss': {
     name: 'STAGE 2-BOSS (五阶段全连携终极战: 7->5->8->4->9)',
     init() {
       return {
         p0Blinked: false,
-        p1ShieldUsed: false,
         p1StartTime: null,
-        p2Blinked: false,
         p2StartTime: null,
-        p3Blinked: false,
+        p2Blinked: false,
         p3StartTime: null,
-        p4Blinked: false,
-        p4ShieldUsed: false,
         p4StartTime: null,
+        p4ShieldWasBroken: false,
+        p4ShieldRestoredTime: null,
+        p4Blinked: false,
         lastReportedPhase: -1
       };
     },
@@ -220,7 +227,7 @@ export const STAGE_STRATEGIES = {
         if (phase === 4) state.p4StartTime = elapsed;
       }
 
-      // Phase 0: 7 弱点, 7 血 (W 前推破盾 -> S+J 后闪 -> W 前冲微移规避狙击斩杀)
+      // Phase 0: 7 弱点, 7 血 (W 前推破盾 -> S+J 后闪避狙 -> W 前冲微移规避斩杀, 0 伤)
       if (phase === 0) {
         if (!enemy.shield.isBroken && !enemy.shield.isShattering) {
           inputs.keys['KeyW'] = true;
@@ -237,43 +244,97 @@ export const STAGE_STRATEGIES = {
           }
         }
       }
-      // Phase 1: 5 弱点, 7 血 (S 后撤连碎 5 盾，1.15s 展开反射力场反弹双发狙击造成 2 核心伤害 + 5 发激光灌满 7 血，定格后置位)
+      // Phase 1: 5 弱点, 7 血 (严格 72° 纯 S 红移连击 5 弱点零空弹 -> 破盾后 W 冲刺灌伤微移躲狙, 0 伤)
       else if (phase === 1) {
         const p1Time = state.p1StartTime ? elapsed - state.p1StartTime : 0;
         if (!enemy.shield.isBroken && !enemy.shield.isShattering) {
+          // 破盾期：保持严格正向 S 恒速后退 (220px/s 红移拉大周期至 0.264s 严格吻合 72°)，5 发 100% 连续破 5 盾，绝不横移偏转导致空弹！
           inputs.keys['KeyS'] = true;
-        }
-        if (!state.p1ShieldUsed && p1Time >= 1.15) {
-          inputs.actions.push('skill3');
-          state.p1ShieldUsed = true;
-        }
-      }
-      // Phase 2: 8 弱点, 8 血 (严格无护盾纯走位大考：从后置位 400, 560 出发，W 前推切入 targetY = 185 冲破 8 盾并射杀 8 血，最终停在 Boss 内圈 <=88px，0 伤)
-      else if (phase === 2) {
-        const targetY = enemy.y + 55;
-        if (player.y > targetY + 2) inputs.keys['KeyW'] = true;
-        else if (player.y < targetY - 2) inputs.keys['KeyS'] = true;
-      }
-      // Phase 3: 4 弱点, 9 血 (内圈受机械弹簧拳击退 -1 血 -> 550px/s 恒速滑退多普勒 90° 连碎 4 盾 -> 破盾后 W 前推切入 targetY = 185 融化 9 血)
-      else if (phase === 3) {
-        if (!enemy.shield.isBroken && !enemy.shield.isShattering) {
-          // 匀速滑退中自动射击连碎 4 盾
         } else {
-          const targetY = enemy.y + 55;
+          // 护盾击破后：W 全速前冲灌注多普勒高频伤害，并在 1.35s-1.70s 轻微右偏躲避狙击弹，随后回中
+          inputs.keys['KeyW'] = true;
+          if (p1Time >= 1.35 && p1Time <= 1.70) {
+            inputs.keys['KeyD'] = true;
+          } else if (p1Time > 1.70 && player.x > 401) {
+            inputs.keys['KeyA'] = true;
+          }
+        }
+      }
+      // Phase 2: 8 弱点, 7 血 (前置位 W 前推 0.22s 避开余弹 -> A+W 绕盾连碎前 4 盾 (WP 0, 7, 6, 5) -> 0.95s W 向上闪现 -> W+D 斜切连碎后 4 盾 (WP 4, 3, 2, 1) -> 平滑进圈 targetY=175)
+      else if (phase === 2) {
+        const p2Time = state.p2StartTime ? elapsed - state.p2StartTime : 0;
+        if (!enemy.shield.isBroken && !enemy.shield.isShattering) {
+          if (p2Time < 0.22) {
+            // 开局 0.22s：保持 W 前推对正，待 Phase 1 残余弹幕飞掠穿过
+            inputs.keys['KeyW'] = true;
+          } else if (p2Time < 0.95) {
+            // 前 4 盾：A+W 逆时针贴盾绕行，连碎前 4 个弱点 (WP 0, 7, 6, 5)
+            inputs.keys['KeyA'] = true;
+            inputs.keys['KeyW'] = true;
+          } else if (!state.p2Blinked && p2Time >= 0.95) {
+            // 0.95s 节点：按下 W 向上折跃瞬移，顺应自转完成跳角位移
+            inputs.keys['KeyW'] = true;
+            inputs.actions.push('skill2');
+            state.p2Blinked = true;
+          } else {
+            // 闪现后：W+D 斜切顺应顺时针自转，后 4 发连碎后 4 个弱点 (WP 4, 3, 2, 1)！
+            inputs.keys['KeyW'] = true;
+            inputs.keys['KeyD'] = true;
+          }
+        } else if (enemy.shield.isShattering) {
+          // 碎盾顿挫无敌期：平滑向敌机 x 轴对齐，保持在盾外
+          if (player.x < enemy.x - 2) inputs.keys['KeyD'] = true;
+          else if (player.x > enemy.x + 2) inputs.keys['KeyA'] = true;
+        } else {
+          // 破盾融化期：走进内圈 targetY = enemy.y + 45 (175)，倾泻伤害并在阶段末定格圈内
+          const targetY = enemy.y + 45;
+          const targetX = enemy.x;
           if (player.y > targetY + 2) inputs.keys['KeyW'] = true;
           else if (player.y < targetY - 2) inputs.keys['KeyS'] = true;
+
+          if (player.x < targetX - 2) inputs.keys['KeyD'] = true;
+          else if (player.x > targetX + 2) inputs.keys['KeyA'] = true;
         }
       }
-      // Phase 4: 9 弱点, 11 血 (0.1s 键位放空折跃瞬移直插护盾内圈 39px -> 零距离激光暴击贯穿核心斩杀 Boss，HP=1 存活大通关！)
+      // Phase 3: 4 弱点, 9 血 (圈内预打 2 伤 -> 弹簧拳击飞 -1 血至 2/3 -> 550px/s 恒速滑退连碎 4 盾 -> W 前推回 targetY = 175 灌入 7 伤，平滑停留在内圈)
+      else if (phase === 3) {
+        const p3Time = state.p3StartTime ? elapsed - state.p3StartTime : 0;
+        if (p3Time >= 0.40) {
+          const targetY = enemy.y + 45;
+          const targetX = enemy.x;
+          if (player.y > targetY + 2) inputs.keys['KeyW'] = true;
+          else if (player.y < targetY - 2) inputs.keys['KeyS'] = true;
+
+          if (player.x < targetX - 2) inputs.keys['KeyD'] = true;
+          else if (player.x > targetX + 2) inputs.keys['KeyA'] = true;
+        }
+      }
+      // Phase 4: 9 弱点, 11 血 (圈内打入 2 伤 -> 弹簧拳击飞 -1 血至 1/3 -> 保持 y=540 击破 9 盾 -> 破盾后 W 极速冲锋多普勒倾泻 7 伤 -> 盾恢复瞬间闪现直插核心补 2 伤斩杀 Boss，HP=1/3 存活！)
       else if (phase === 4) {
         const p4Time = state.p4StartTime ? elapsed - state.p4StartTime : 0;
-        if (!state.p4Blinked && p4Time >= 0.1) {
-          // 不按方向键触发折跃入盾
-          inputs.actions.push('skill2');
-          state.p4Blinked = true;
+        if (enemy.shield.isBroken) {
+          state.p4ShieldWasBroken = true;
         }
-        if (state.p4Blinked && player.shieldCdTimer <= 0) {
-          inputs.actions.push('skill3');
+        if (state.p4ShieldWasBroken && !enemy.shield.isBroken && !state.p4ShieldRestoredTime) {
+          state.p4ShieldRestoredTime = elapsed;
+        }
+
+        const punchDelay = enemy.invadeThreshold || 0.44;
+        if (p4Time < punchDelay) {
+          inputs.keys['KeyW'] = true;
+        } else if (p4Time >= punchDelay + 0.05) {
+          if (!enemy.shield.isBroken && !enemy.shield.isShattering && !state.p4ShieldWasBroken) {
+            const holdY = 540;
+            if (player.y < holdY - 4) inputs.keys['KeyS'] = true;
+            else if (player.y > holdY + 4) inputs.keys['KeyW'] = true;
+          } else if (enemy.shield.isBroken || enemy.shield.isShattering) {
+            inputs.keys['KeyW'] = true;
+          } else if (state.p4ShieldRestoredTime) {
+            if (!state.p4Blinked) {
+              inputs.actions.push('skill2');
+              state.p4Blinked = true;
+            }
+          }
         }
       }
 

@@ -51,8 +51,6 @@ const playerHpCells = document.getElementById('player-hp-cells');
 
 const slotSkill1 = document.getElementById('slot-skill1');
 const skill1Status = document.getElementById('skill1-status');
-const slotSkill2 = document.getElementById('slot-skill2');
-const skill2Status = document.getElementById('skill2-status');
 
 const overlay = document.getElementById('game-overlay');
 const overlayTitle = document.getElementById('overlay-title');
@@ -146,6 +144,10 @@ let isTimeFrozen = false;
 let hasShownFreezePrompt = false;
 let lastTime = 0;
 let speedrunSeconds = 0;
+// 逻辑与显示解耦：严格恒定 60Hz 确定性物理逻辑步长 (16.6667ms)
+export const FIXED_DT = 1 / 60;
+let physicsAccumulator = 0;
+let physicsTime = 0;
 export const VIRTUAL_WIDTH = 800;
 export const VIRTUAL_HEIGHT = 800;
 
@@ -469,10 +471,11 @@ function initStage(stg) {
     enemyTarget = new Boss(enemyX, enemyY, { hp: 150, weakpoints: 9, enableBullets: false });
     bossTag.textContent = 'STAGE 2-s9 // 9 WEAKPOINTS (HIGH FREQ BURST)';
   } else if (stg === '2-boss') {
-    // 2-boss 综合终极决战：五阶段顺序 [7, 5, 8, 4, 9]，破盾转阶，血量 [7, 7, 8, 9, 11]
+    // 2-boss 综合终极决战：五阶段顺序 [7, 5, 8, 4, 9]，破盾转阶，血量分配 [7, 7, 7, 9, 11]
+    // 严格统一 1.45s 暴露时间：阶段 2 分配 7 血 (进圈前置斩杀)，阶段 3 分配 9 血 (出拳前圈内打 2 下 + 暴露期多普勒灌 7 下)
     enemyTarget = new Boss(enemyX, enemyY, {
       phaseSequence: [7, 5, 8, 4, 9],
-      phaseHps: [7, 7, 8, 9, 11],
+      phaseHps: [7, 7, 7, 9, 11],
       enableBullets: true
     });
     bossTag.textContent = 'STAGE 2-BOSS // TITAN MATRIX (PHASE 1/5: 7 WP | 7 HP)';
@@ -488,6 +491,9 @@ function initStage(stg) {
 
   freqMeter.reset();
   speedrunSeconds = 0;
+  physicsTime = 0;
+  physicsAccumulator = 0;
+  lastTime = 0;
   timerDigits.textContent = '00:00.00';
   updatePlayerHpUI();
 }
@@ -503,6 +509,9 @@ function startGame() {
   player.heal(3);
 
   freqMeter.reset();
+  physicsTime = 0;
+  physicsAccumulator = 0;
+  lastTime = 0;
 
   isVictory = false;
   isVictoryPending = false;
@@ -642,11 +651,8 @@ function handleCollisions(now) {
 
     // 护盾未彻底破裂 (包含正常防御态与 0.3s 碎裂顿挫动画态)
     if (!enemyTarget.shield.isBroken) {
-      const hitShield = enemyTarget.shield.checkBulletCollision(bullet, freqMeter, now);
-      if (hitShield) continue;
-
-      // 仅当玩家确实已通过折跃闪现置身于护盾内部深处 (player.isInsideShield) 且未处于碎盾顿挫无敌态，才允许近身打击核心！
-      if (!enemyTarget.shield.isShattering && player.isInsideShield) {
+      // 仅当玩家确实已置身于护盾内部深处 (player.isInsideShield)，才允许近身打击核心！
+      if (player.isInsideShield) {
         const playerDist = Math.hypot(player.x - enemyTarget.x, player.y - enemyTarget.y);
         if (playerDist <= enemyTarget.shield.radius * 0.75) {
           const dx = bullet.x - enemyTarget.x;
@@ -666,8 +672,13 @@ function handleCollisions(now) {
             }
             continue;
           }
+          // 子弹处于护盾内部正向核心飞行，禁止外层护盾误拦截
+          continue;
         }
       }
+
+      const hitShield = enemyTarget.shield.checkBulletCollision(bullet, freqMeter, now);
+      if (hitShield) continue;
     } else {
       const dx = bullet.x - enemyTarget.x;
       const dy = bullet.y - enemyTarget.y;
@@ -807,21 +818,6 @@ function updateHUD(now) {
     skill1Status.className = 'skill-status';
   }
 
-  // K 键反射力场 HUD 状态
-  if (player.skill1Active) {
-    slotSkill2.classList.add('active');
-    skill2Status.textContent = 'SHIELDING';
-    skill2Status.className = 'skill-status fire-on';
-  } else if (player.shieldCdTimer > 0) {
-    slotSkill2.classList.remove('active');
-    skill2Status.textContent = `CD: ${player.shieldCdTimer.toFixed(1)}s`;
-    skill2Status.className = 'skill-status cooling';
-  } else {
-    slotSkill2.classList.remove('active');
-    skill2Status.textContent = 'READY';
-    skill2Status.className = 'skill-status';
-  }
-
   if (currentStage !== '1' && isRunning && !isVictory) {
     timerDigits.textContent = formatTimer(speedrunSeconds);
   }
@@ -866,50 +862,76 @@ function renderBackground(ctx, dt) {
   ctx.restore();
 }
 
+// 核心逻辑更新步进：严格恒定以 FIXED_DT (1/60s) 执行，保证 100% 确定性物理世界
+function physicsStep(dt) {
+  physicsTime += dt;
+
+  // 1. TAS 虚拟按键注入 (在玩家逻辑更新之前注入)
+  if (tas && tas.active) {
+    tas.update(dt);
+    if (isTimeFrozen && (input.keys['KeyW'] || input.keys['KeyA'] || input.keys['KeyS'] || input.keys['KeyD'])) {
+      isTimeFrozen = false;
+      freezePrompt.style.display = 'none';
+    }
+  }
+
+  if (!isTimeFrozen) {
+    if (currentStage !== '1' && !isVictory && !isVictoryPending) {
+      speedrunSeconds += dt;
+    }
+
+    const bossBullets = (currentStage !== '1' && enemyTarget.bullets) ? enemyTarget.bullets : null;
+    player.update(dt, input, VIRTUAL_WIDTH, VIRTUAL_HEIGHT, bossBullets);
+
+    const currentPhysicsMs = physicsTime * 1000;
+    enemyTarget.update(dt, currentPhysicsMs, player, freqMeter);
+    freqMeter.update(currentPhysicsMs);
+    handleCollisions(currentPhysicsMs);
+
+    // 敌方击毁全局实时检测：无论敌方因何种伤害阵亡，立即锁定通关用时并触发结算弹窗！
+    if (enemyTarget.isDead && !isVictoryPending) {
+      isVictory = true;
+      isVictoryPending = true;
+      timerDigits.textContent = formatTimer(speedrunSeconds);
+      setTimeout(showVictory, 800);
+    }
+  }
+}
+
 function gameLoop(timestamp) {
   if (!lastTime) lastTime = timestamp;
-  const dt = Math.min((timestamp - lastTime) / 1000, 0.1);
+  const frameTime = Math.min((timestamp - lastTime) / 1000, 0.1);
   lastTime = timestamp;
 
-  ctx.clearRect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
-
-  renderBackground(ctx, dt);
-
+  // 逻辑与显示彻底解耦：通过固定时间步长累加器驱动确定性物理演算
   if (isRunning) {
-    // TAS 虚拟按键注入 (在玩家逻辑更新之前注入)
-    if (tas && tas.active) {
-      tas.update(dt);
-      if (isTimeFrozen && (input.keys['KeyW'] || input.keys['KeyA'] || input.keys['KeyS'] || input.keys['KeyD'])) {
-        isTimeFrozen = false;
-        freezePrompt.style.display = 'none';
-      }
+    physicsAccumulator += frameTime;
+
+    // 螺旋死亡保护：单帧渲染内最多追赶执行 5 次固定物理步进 (防切后台卡顿)
+    const maxSteps = 5;
+    let steps = 0;
+    while (physicsAccumulator >= FIXED_DT && steps < maxSteps) {
+      physicsStep(FIXED_DT);
+      physicsAccumulator -= FIXED_DT;
+      steps++;
     }
 
-    if (!isTimeFrozen) {
-      if (currentStage !== '1' && !isVictory && !isVictoryPending) {
-        speedrunSeconds += dt;
-      }
-
-      const bossBullets = (currentStage !== '1' && enemyTarget.bullets) ? enemyTarget.bullets : null;
-      player.update(dt, input, VIRTUAL_WIDTH, VIRTUAL_HEIGHT, bossBullets);
-      enemyTarget.update(dt, timestamp, player, freqMeter);
-      freqMeter.update(timestamp);
-      handleCollisions(timestamp);
-
-      // 敌方击毁全局实时检测：无论敌方因何种伤害（自导激光直击或力场反弹弹幕）阵亡，立即锁定通关用时并触发结算弹窗！
-      if (enemyTarget.isDead && !isVictoryPending) {
-        isVictory = true;
-        isVictoryPending = true;
-        timerDigits.textContent = formatTimer(speedrunSeconds);
-        setTimeout(showVictory, 800);
-      }
+    // 若依然积压超时（如长时间切后台切回），重置累加器防止快进追赶
+    if (physicsAccumulator >= FIXED_DT) {
+      physicsAccumulator = 0;
     }
-
-    updateHUD(timestamp);
   }
+
+  // 渲染逻辑：以屏幕刷新率独立平滑绘制
+  ctx.clearRect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
+  renderBackground(ctx, frameTime);
 
   enemyTarget.render(ctx);
   player.render(ctx);
+
+  if (isRunning) {
+    updateHUD(timestamp);
+  }
 
   requestAnimationFrame(gameLoop);
 }

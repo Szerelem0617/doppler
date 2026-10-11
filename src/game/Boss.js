@@ -30,7 +30,7 @@ export class Boss {
 
     this.initialWeakpoints = this.phaseWeakpoints ? this.phaseWeakpoints[0] : (config.weakpoints || 4);
     this.shield = new Shield(this, this.initialWeakpoints, 88, 0.30);
-    this.shield.rechargeDuration = 1.45; // 破盾后暴露虚弱攻击时间窗口 (静止严格限额 6 血)
+    this.shield.rechargeDuration = 2.0; // 破盾后暴露虚弱攻击时间窗口 (结合 0.35s 碎裂顿挫无敌帧，提供充裕容错与输出期)
 
     // 弹幕配置
     this.enableBullets = config.enableBullets !== false;
@@ -46,7 +46,7 @@ export class Boss {
 
     // 护盾内部入侵惩罚机制 (机械弹簧拳 Spring Punch)
     this.invadeTimer = 0;
-    this.invadeThreshold = 0.35; // 入侵 0.35s 后触发弹簧拳
+    this.invadeThreshold = 0.44; // 入侵 0.44s 后触发弹簧拳 (微调给玩家腾出两发极限打击与斩杀窗口)
     this.springPunchActive = false;
     this.springPunchTimer = 0;
     this.springPunchDuration = 0.28;
@@ -117,7 +117,7 @@ export class Boss {
     // 护盾自然过载超时恢复：保持当前阶段的盾数！
     if (wasBroken && !this.shield.isBroken) {
       const currentShieldCount = this.phaseWeakpoints ? this.phaseWeakpoints[this.currentPhaseIndex] : this.initialWeakpoints;
-      const rechargeDur = (this.currentPhaseIndex === 2) ? 1.85 : 1.45;
+      const rechargeDur = 2.0;
       this.shield.setConfiguration(currentShieldCount, rechargeDur);
     }
 
@@ -127,29 +127,6 @@ export class Boss {
       const b = this.bullets[i];
       if (!b) continue;
       b.update(dt, this, player);
-
-      if (b.isReflected && b.alive) {
-        const dx = b.x - this.x;
-        const dy = b.y - this.y;
-        const dist = Math.hypot(dx, dy);
-
-        // 如果护盾尚未击破，护盾力场阻挡格挡反弹子弹
-        if (this.shield && !this.shield.isBroken) {
-          if (dist <= this.shield.radius + 8) {
-            b.alive = false;
-            this.shield.createSparks(b.x, b.y, '#00ffff');
-            audio.playShieldDeflect();
-          }
-        } else {
-          // 护盾击破后：反弹子弹直接命中核心造成伤害！
-          if (dist <= this.radius + 8) {
-            b.alive = false;
-            const dmg = (this.phaseHps) ? 1 : b.damage;
-            this.takeDamage(dmg, frequencyMeter, now);
-            if (this.isDead) break;
-          }
-        }
-      }
 
       if (!b.alive) {
         this.bullets.splice(i, 1);
@@ -165,8 +142,8 @@ export class Boss {
       }
     }
 
-    // 护盾内部入侵判定：若护盾未破且未处于碎裂顿挫中，玩家闪现或移动进入护盾内部，0.35s 后触发机械弹簧拳重击与击飞
-    if (this.shield && !this.shield.isBroken && !this.shield.isShattering && player && !player.isDead) {
+    // 护盾内部入侵判定：若护盾未破，玩家闪现或移动进入护盾内部，触发机械弹簧拳重击与击飞
+    if (this.shield && !this.shield.isBroken && player && !player.isDead) {
       const distToPlayer = Math.hypot(player.x - this.x, player.y - this.y);
       if (distToPlayer <= this.shield.radius) {
         this.invadeTimer += dt;
@@ -202,8 +179,8 @@ export class Boss {
     // 确定性弹幕发射 (破盾期间攻击能力不受任何影响)
     if (this.enableBullets) {
       // 攻击节拍支持各阶段深度调谐：第二阶段 (8 弱点纯走位大考) 与第五阶段 (9 弱点终局大狂暴) 专用攻击节奏
-      const curRadialInterval = (this.currentPhaseIndex === 4) ? 0.12 : (this.currentPhaseIndex === 2) ? 4.8 : this.radialInterval;
-      const curSnipeInterval = (this.currentPhaseIndex === 4) ? 0.25 : (this.currentPhaseIndex === 2) ? 4.8 : (this.currentPhaseIndex === 1) ? 2.5 : this.snipeInterval;
+      const curRadialInterval = (this.currentPhaseIndex >= 2) ? 6.8 : this.radialInterval;
+      const curSnipeInterval = (this.currentPhaseIndex >= 2) ? 6.8 : (this.currentPhaseIndex === 1) ? 2.5 : this.snipeInterval;
 
       this.radialTimer += dt;
       if (this.radialTimer >= curRadialInterval) {
@@ -262,8 +239,9 @@ export class Boss {
     const angle = Math.atan2(dy, dx);
     const speed = 360;
 
-    // 阶段 1 专属双发收敛狙击：偏角紧致在 [-0.06, 0.06]，使玩家在后退开反弹盾时能同时反弹 2 枚子弹直击 Boss 核心
-    const offsets = (this.currentPhaseIndex === 1) ? [-0.06, 0.06] : [-0.32, 0, 0.32];
+    // 确定性狙击光束：严格锁定玩家几何中心，统一三发扇形（±0.32 rad 及正中 0 rad）
+    // 无论哪个阶段均统一标准三发，玩家在后退开反弹盾时自然反弹正中 1 枚子弹直击 Boss 核心
+    const offsets = [-0.32, 0, 0.32];
 
     offsets.forEach(offset => {
       const a = angle + offset;
@@ -275,6 +253,10 @@ export class Boss {
 
   takeDamage(amount, frequencyMeter, now) {
     if (this.isDead) return;
+
+    if (typeof window !== 'undefined' && window.tas && window.tas.active) {
+      window.tas.recordBulletHit(this.currentPhaseIndex ?? 0, 'core', amount, 0);
+    }
 
     if (this.phaseHps) {
       this.currentPhaseHp = Math.max(0, this.currentPhaseHp - amount);
@@ -328,7 +310,7 @@ export class Boss {
 
   render(ctx) {
     // 护盾内部入侵红色警示圈
-    if (this.invadeTimer > 0 && !this.shield.isBroken && !this.shield.isShattering) {
+    if (this.invadeTimer > 0 && !this.shield.isBroken) {
       const alpha = Math.min(1, this.invadeTimer / this.invadeThreshold);
       ctx.save();
       ctx.strokeStyle = `rgba(255, 42, 109, ${0.4 + 0.6 * alpha})`;
@@ -600,15 +582,16 @@ export class Boss {
     if (this.currentPhaseIndex < this.phaseWeakpoints.length) {
       const nextShieldCount = this.phaseWeakpoints[this.currentPhaseIndex];
       this.currentPhaseHp = this.phaseHps[this.currentPhaseIndex];
-      const rechargeDur = (this.currentPhaseIndex === 2) ? 1.85 : 1.45;
+      const rechargeDur = 2.0;
       // 立刻恢复下一个阶段盾！
       this.shield.setConfiguration(nextShieldCount, rechargeDur);
       this.shield.isBroken = false;
       audio.playShieldBreak(); // 转阶音效
 
-      // 转阶时清零发射计时器，给予平滑预警窗口 (阶段 1 预热 1.95s，确保在 0.55s 准时发射双发收敛狙击)
+      // 转阶时清零发射与入侵计时器，给予平滑预警窗口与完整入侵判定周期
       this.radialTimer = 0;
       this.snipeTimer = (this.currentPhaseIndex === 1) ? 1.95 : 0;
+      this.invadeTimer = 0;
 
       // 第五阶段 (9 弱点)：护盾生成时向玩家发射密集散弹雨
       if (this.currentPhaseIndex === 4 && this.enableBullets) {

@@ -8,8 +8,6 @@ export class InputManager {
 
     // 技能触发标记 (单次按下触发)
     this.skill1Triggered = false; // J: 折跃闪现
-    this.skill2Triggered = false; // K: 反射力场
-    this.skill3Triggered = false; // L: (备用兼容)
 
     this.initEvents();
   }
@@ -19,12 +17,6 @@ export class InputManager {
       this.keys[e.code] = true;
       if (e.code === 'KeyJ') {
         this.skill1Triggered = true; // J 键: 折跃闪现
-      }
-      if (e.code === 'KeyK') {
-        this.skill2Triggered = true; // K 键: 反射力场
-      }
-      if (e.code === 'KeyL') {
-        this.skill2Triggered = true; // L 键兼容触发力场
       }
     });
 
@@ -87,23 +79,19 @@ export class InputManager {
     return this.consumeSkill1();
   }
 
-  // 消费一次 K 键反射力场盾触发
+  // 消费一次 K 键反射力场盾触发 (力场已移除)
   consumeSkill2() {
-    if (this.skill2Triggered) {
-      this.skill2Triggered = false;
-      return true;
-    }
     return false;
   }
 
   // 别名
   consumeShield() {
-    return this.consumeSkill2();
+    return false;
   }
 
   // 兼容老调用
   consumeSkill3() {
-    return this.consumeSkill2();
+    return false;
   }
 
   // 兼容老调用：火控切换已删除，战机常驻自动连射

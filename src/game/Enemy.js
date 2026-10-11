@@ -45,8 +45,8 @@ export class Enemy {
       }
     }
 
-    // 护盾内部入侵判定：若护盾未破且未处于碎裂顿挫中，且玩家进入护盾内部，0.35s 后触发弹簧拳轰飞
-    if (this.shield && !this.shield.isBroken && !this.shield.isShattering && player && !player.isDead) {
+    // 护盾内部入侵判定：若护盾未破，且玩家进入护盾内部，触发弹簧拳轰飞
+    if (this.shield && !this.shield.isBroken && player && !player.isDead) {
       const distToPlayer = Math.hypot(player.x - this.x, player.y - this.y);
       if (distToPlayer <= this.shield.radius) {
         this.invadeTimer += dt;

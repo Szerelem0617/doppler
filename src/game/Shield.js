@@ -17,12 +17,12 @@ export class Shield {
     this.weakpoints = new Array(this.count).fill(true);
 
     this.isBroken = false;
-    this.rechargeDuration = 1.45; // 破盾后暴露时间 (静止严格限额 6 血)
+    this.rechargeDuration = 2.0; // 破盾后暴露时间 (2.0s 充裕输出窗口)
     this.rechargeTimer = 0;
 
-    // 碎盾短时顿挫动画机制 (0.3s 期间无敌且子弹无法穿透偏转)
+    // 碎裂顿挫无敌机制 (0.35s 碎盾顿挫无敌帧，提供破盾与斩杀间的战略喘息与走位容错窗口)
     this.isShattering = false;
-    this.shatterDuration = 0.3; // 0.3 秒紧凑顿挫动画
+    this.shatterDuration = 0.35; 
     this.shatterTimer = 0;
     this.justBroken = false;
     this.shatterShockwaves = [];
@@ -32,14 +32,15 @@ export class Shield {
     this.sparks = []; // 受击击破粒子
   }
 
-  // 动态切换弱点配置 (如第二关 6 弱点冲锋护盾或 2 弱点环绕护盾)
-  setConfiguration(count, rechargeDuration = 1.45) {
+  // 动态切换弱点配置
+  setConfiguration(count, rechargeDuration = 2.0) {
     this.count = count;
     this.rechargeDuration = rechargeDuration;
     this.weakpoints = new Array(this.count).fill(true);
     this.isBroken = false;
     this.isShattering = false;
     this.shatterTimer = 0;
+    this.shatterDuration = 0.35;
     this.justBroken = false;
     this.shatterShockwaves = [];
     this.shatterShards = [];
@@ -75,35 +76,19 @@ export class Shield {
       const sh = this.shatterShards[i];
       sh.dist += 80 * dt;
       sh.rot += sh.rotSpeed * dt;
-      sh.alpha = Math.max(0, 1 - (this.shatterTimer / this.shatterDuration));
+      sh.alpha = Math.max(0, sh.alpha - dt / 0.3);
+      if (sh.alpha <= 0) {
+        this.shatterShards.splice(i, 1);
+      }
     }
 
-    // 处于 0.3 秒碎盾动画过渡期
+    // 碎裂顿挫无敌过渡态更新
     if (this.isShattering) {
       this.shatterTimer += dt;
-      // 快速震颤自旋
-      this.currentAngle = (this.currentAngle + this.rotationSpeed * 2.2 * dt) % (Math.PI * 2);
-
-      // 间歇喷涌崩解微粒子
-      if (Math.random() < 0.6) {
-        const randA = Math.random() * Math.PI * 2;
-        this.sparks.push({
-          x: this.enemy.x + Math.cos(randA) * (this.radius + (Math.random() - 0.5) * 16),
-          y: this.enemy.y + Math.sin(randA) * (this.radius + (Math.random() - 0.5) * 16),
-          vx: Math.cos(randA) * (80 + Math.random() * 120),
-          vy: Math.sin(randA) * (80 + Math.random() * 120),
-          life: 0.2 + Math.random() * 0.15,
-          color: Math.random() > 0.4 ? '#ffaa00' : '#ff2a6d'
-        });
-      }
-
-      // 0.3s 碎盾动画结束，护盾彻底消散，进入虚弱暴露期！
       if (this.shatterTimer >= this.shatterDuration) {
         this.isShattering = false;
         this.isBroken = true;
         this.rechargeTimer = 0;
-        audio.playShieldCollapse();
-        this.createFinalCollapseBurst();
       }
       return;
     }
@@ -131,20 +116,27 @@ export class Shield {
   checkBulletCollision(bullet, frequencyMeter, now) {
     if (this.isBroken) return false;
 
-    const dx = bullet.x - this.enemy.x;
-    const dy = bullet.y - this.enemy.y;
-    const dist = Math.hypot(dx, dy);
-
-    // 碎盾动画期间：无法穿透，不受伤害，击中直接引爆偏转火花并销毁子弹
+    // 碎裂顿挫无敌期间：拦截并弹飞子弹，保护核心并给玩家提供战术走位与喘息窗口
     if (this.isShattering) {
-      if (dist <= this.radius + 14) {
+      const dx = bullet.x - this.enemy.x;
+      const dy = bullet.y - this.enemy.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= this.radius + 8) {
         bullet.alive = false;
-        this.createSparks(bullet.x, bullet.y, '#ffaa00');
-        audio.playShieldDeflect();
+        this.createSparks(bullet.x, bullet.y, 'rgba(255, 42, 109, 0.8)');
+        audio.playTargetHit(2.5);
+        if (typeof window !== 'undefined' && window.tas && window.tas.active) {
+          const phase = this.enemy.currentPhaseIndex ?? 0;
+          window.tas.recordBulletHit(phase, 'shatter', 1, 0);
+        }
         return true;
       }
       return false;
     }
+
+    const dx = bullet.x - this.enemy.x;
+    const dy = bullet.y - this.enemy.y;
+    const dist = Math.hypot(dx, dy);
 
     // 护盾未彻底破裂状态下：拦截所有到达或穿入护盾判定区的子弹，绝对禁止穿盾偷打核心！
     if (dist <= this.radius + 8) {
@@ -172,6 +164,10 @@ export class Shield {
       this.isRotating = true;
       audio.playWeakpointHit();
       this.createSparks(bullet.x, bullet.y, '#ffaa00');
+      if (typeof window !== 'undefined' && window.tas && window.tas.active) {
+        const phase = this.enemy.currentPhaseIndex ?? 0;
+        window.tas.recordBulletHit(phase, 'wp', 0, hitAngle);
+      }
       this.checkAllWeakpoints();
       return;
     }
@@ -198,10 +194,18 @@ export class Shield {
       this.weakpoints[hitIndex] = false;
       audio.playWeakpointHit();
       this.createSparks(bullet.x, bullet.y, '#ffaa00');
+      if (typeof window !== 'undefined' && window.tas && window.tas.active) {
+        const phase = this.enemy.currentPhaseIndex ?? 0;
+        window.tas.recordBulletHit(phase, 'wp', hitIndex, hitAngle);
+      }
       this.checkAllWeakpoints();
     } else {
       audio.playTargetHit(currentFreq * 0.8);
       this.createSparks(bullet.x, bullet.y, 'rgba(0, 240, 255, 0.8)');
+      if (typeof window !== 'undefined' && window.tas && window.tas.active) {
+        const phase = this.enemy.currentPhaseIndex ?? 0;
+        window.tas.recordBulletHit(phase, 'deflect', 1, hitAngle);
+      }
     }
   }
 
@@ -215,10 +219,13 @@ export class Shield {
   startShatter() {
     this.isShattering = true;
     this.shatterTimer = 0;
+    this.shatterDuration = 0.35; // 0.35s 碎裂顿挫无敌帧与战略喘息期
     this.isBroken = false;
     this.justBroken = true;
+    this.rechargeTimer = 0;
     audio.playShieldBreak();
     this.createBreakExplosion();
+    this.createFinalCollapseBurst();
 
     // 初始冲击波能量环
     this.shatterShockwaves = [{

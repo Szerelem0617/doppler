@@ -43,17 +43,11 @@ export class Player {
     this.knockbackTimer = 0;
     this.knockbackDuration = 0.35;
 
-    // 战术技能 1: 折跃闪现 (J 键触发)
-    this.blinkCooldown = 7.5;
+    // 战术技能: 折跃闪现 (J 键触发，5.0s 充能周期，契合全阶段多波次折跃机动)
+    this.blinkCooldown = 5.0;
     this.blinkCdTimer = 0;
     this.blinkDistance = 300;
 
-    // 战术技能 2: 反射力场护盾 (K 键触发)
-    this.shieldCooldown = 10.0;
-    this.shieldCdTimer = 0;
-    this.skill1Duration = 1.0;
-    this.skill1Timer = 0;
-    this.skill1Active = false; // 力场是否正处于激活状态 (保持变量名兼容 BossBullet.js)
     this.isInsideShield = false; // 是否显式通过折跃闪现进入了护盾内部 (严禁肉身挤盾穿透)
   }
 
@@ -61,14 +55,6 @@ export class Player {
   get skill2CdTimer() { return this.blinkCdTimer; }
   set skill2CdTimer(v) { this.blinkCdTimer = v; }
   get skill2Cooldown() { return this.blinkCooldown; }
-  get skill1CdTimer() { return this.shieldCdTimer; }
-  set skill1CdTimer(v) { this.shieldCdTimer = v; }
-  get skill1Cooldown() { return this.shieldCooldown; }
-  get shieldActive() { return this.skill1Active; }
-  set shieldActive(v) { this.skill1Active = v; }
-  get shieldTimer() { return this.skill1Timer; }
-  set shieldTimer(v) { this.skill1Timer = v; }
-  get shieldDuration() { return this.skill1Duration; }
 
   setEnemy(enemy) {
     this.enemy = enemy;
@@ -79,8 +65,6 @@ export class Player {
     if (this.isDead) return false;
     // 处于受击无敌时间内免疫伤害
     if (this.invincibleTimer > 0) return false;
-    // 处于 L 键反射力场护盾激活态免疫伤害
-    if (this.skill1Active) return false;
 
     this.hp = Math.max(0, this.hp - amount);
     this.invincibleTimer = this.invincibleDuration;
@@ -134,22 +118,9 @@ export class Player {
     }
   }
 
-  // 开启 K 键力场盾
-  activateShield() {
-    if (this.shieldCdTimer <= 0) {
-      this.skill1Active = true;
-      this.skill1Timer = this.skill1Duration;
-      this.shieldCdTimer = this.shieldCooldown;
-      audio.playReflectShield();
-      return true;
-    }
-    return false;
-  }
-
   update(dt, input, canvasWidth, canvasHeight, bossBullets = null) {
     // 技能冷却更新
     if (this.blinkCdTimer > 0) this.blinkCdTimer = Math.max(0, this.blinkCdTimer - dt);
-    if (this.shieldCdTimer > 0) this.shieldCdTimer = Math.max(0, this.shieldCdTimer - dt);
     if (this.invincibleTimer > 0) this.invincibleTimer = Math.max(0, this.invincibleTimer - dt);
 
     // 受击火花粒子更新
@@ -160,14 +131,6 @@ export class Player {
       p.life -= dt;
       if (p.life <= 0) {
         this.hitSparks.splice(i, 1);
-      }
-    }
-
-    // K 键力场护盾持续时间更新
-    if (this.skill1Active) {
-      this.skill1Timer -= dt;
-      if (this.skill1Timer <= 0) {
-        this.skill1Active = false;
       }
     }
 
@@ -192,7 +155,7 @@ export class Player {
     this.vx = move.x * this.speed;
     this.vy = move.y * this.speed;
 
-    // 技能 1: J 键触发折跃闪现 (直插护盾或战术位移)
+    // 战术技能: J 键触发折跃闪现 (直插护盾或战术位移)
     if (
       (input.consumeBlink && input.consumeBlink()) ||
       (input.consumeSkill1 && input.consumeSkill1()) ||
@@ -201,15 +164,6 @@ export class Player {
       if (this.blinkCdTimer <= 0) {
         this.executeBlink(move, canvasWidth, canvasHeight);
       }
-    }
-
-    // 技能 2: K 键触发反射护盾
-    if (
-      (input.consumeShield && input.consumeShield()) ||
-      (input.consumeSkill3 && input.consumeSkill3()) ||
-      (!input.consumeShield && !input.consumeSkill3 && input.consumeSkill2 && input.consumeSkill2())
-    ) {
-      this.activateShield();
     }
 
     this.x += this.vx * dt;
@@ -223,19 +177,27 @@ export class Player {
       const dist = Math.hypot(dx, dy);
       const minDistance = this.enemy.shield.radius + this.radius; // 护盾外壁 + 战机判定半径
 
-      // 若战机处于外侧或已被击退离开内圈，清除内部状态
-      if (dist >= this.enemy.shield.radius) {
+      // 若战机已经在护盾内圈内部 (例如在破盾虚弱期走进圈内，或者通过折跃瞬移进入)
+      if (dist < this.enemy.shield.radius) {
+        this.isInsideShield = true;
+      } else {
         this.isInsideShield = false;
       }
 
-      // 未经折跃闪现瞬移进入的常规移动，一律严格阻挡在外壁，绝不允许任何怼盾边缘穿透！
+      // 未处于护盾内部的战机，从外侧推进时一律严格阻挡在外壁，绝不允许从外侧肉身怼盾穿透！
       if (!this.isInsideShield && dist < minDistance) {
         const d = dist || 1;
         this.x = shieldCenter.x + (dx / d) * minDistance;
         this.y = shieldCenter.y + (dy / d) * minDistance;
       }
     } else {
-      this.isInsideShield = false;
+      // 护盾已破损消散时：战机完全自由移动，若已进入内圈则保持内部标记
+      if (this.enemy && this.enemy.shield) {
+        const dist = Math.hypot(this.x - this.enemy.x, this.y - this.enemy.y);
+        this.isInsideShield = (dist < this.enemy.shield.radius);
+      } else {
+        this.isInsideShield = false;
+      }
     }
 
     // 全局边界约束 (放开下半区死锁，允许闪现至全屏幕战区)
@@ -376,6 +338,11 @@ export class Player {
     const bullet = new Bullet(this.x, this.y, this.enemy, 1100);
     this.bullets.push(bullet);
 
+    if (typeof window !== 'undefined' && window.tas && window.tas.active) {
+      const phase = this.enemy.currentPhaseIndex ?? 0;
+      window.tas.recordBulletShot(phase);
+    }
+
     this.wavefronts.push({
       x: this.x,
       y: this.y,
@@ -440,30 +407,7 @@ export class Player {
       b.render(ctx);
     }
 
-    // 6. 渲染 L 键力场护盾 (反弹护盾激活期间呈现蜂窝力场光晕球)
-    if (this.skill1Active) {
-      ctx.save();
-      const pulse = 1 + Math.sin(this.skill1Timer * 16) * 0.08;
-      ctx.strokeStyle = '#00ffff';
-      ctx.fillStyle = 'rgba(0, 240, 255, 0.12)';
-      ctx.lineWidth = 2.5;
-      ctx.shadowColor = '#00ffff';
-      ctx.shadowBlur = 18;
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, 36 * pulse, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      // 力场内部六角蜂巢环
-      ctx.setLineDash([8, 6]);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, 28 * pulse, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // 7. 渲染受击火花粒子
+    // 6. 渲染受击火花粒子
     for (const p of this.hitSparks) {
       ctx.fillStyle = p.color;
       ctx.shadowColor = p.color;
@@ -525,9 +469,6 @@ export class Player {
     this.thrusterParticles = [];
     this.afterimages = [];
     this.blinkCdTimer = 0;
-    this.shieldCdTimer = 0;
-    this.skill1Timer = 0;
-    this.skill1Active = false;
     this.isInsideShield = false;
     this.isKnockedBack = false;
     this.knockbackVx = 0;
