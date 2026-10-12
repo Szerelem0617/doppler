@@ -285,8 +285,9 @@ export const STAGE_STRATEGIES = {
           if (player.x < enemy.x - 2) inputs.keys['KeyD'] = true;
           else if (player.x > enemy.x + 2) inputs.keys['KeyA'] = true;
         } else {
-          // 破盾融化期：走进内圈 targetY = enemy.y + 45 (175)，倾泻伤害并在阶段末定格圈内
-          const targetY = enemy.y + 45;
+          // 破盾融化期：前段保持在安全区 y=36 持续输出核心血量 (绝不提前进入内圈触发弹簧拳)
+          // 当血量打至剩余 <= 2 时，晚点再切入内圈 targetY = 175，阶段末顺利定格圈内迎接入侵准备
+          const targetY = (enemy.currentPhaseHp <= 2) ? (enemy.y + 45) : 36;
           const targetX = enemy.x;
           if (player.y > targetY + 2) inputs.keys['KeyW'] = true;
           else if (player.y < targetY - 2) inputs.keys['KeyS'] = true;
@@ -327,9 +328,9 @@ export const STAGE_STRATEGIES = {
             if (player.y < holdY - 4) inputs.keys['KeyS'] = true;
             else if (player.y > holdY + 4) inputs.keys['KeyW'] = true;
 
-            // 弹簧拳击飞落地后，维持在经过严格物理测算的黄金瞄准坐标 targetX = 338 (稳定区间 330~345)
+            // 弹簧拳击飞落地后，维持在经过严格物理测算的黄金瞄准坐标 targetX = 350 (稳定区间 346~360)
             // 使得 9 弱点盾顺时针旋转 (40° 密位) 依次将每个存活弱点 (0->7->5->3->2->1->8->6->4) 严密送入弹道，实现 0 偏转空弹！
-            const targetX = 338;
+            const targetX = 350;
             if (player.x > targetX + 3) inputs.keys['KeyA'] = true;
             else if (player.x < targetX - 3) inputs.keys['KeyD'] = true;
           } else if (enemy.shield.isBroken || enemy.shield.isShattering) {

@@ -33,17 +33,45 @@
       </div>
 
       <!-- 第二/三关挑战专用计时器 -->
-      <div class="speedrun-timer-card" id="speedrun-timer" style="display: none;">
-        <span class="timer-tag">MISSION TIME</span>
+      <div class="speedrun-timer-card" id="speedrun-timer" style="display: flex;">
+        <span class="timer-tag">TIME</span>
         <span class="timer-val" id="timer-digits">00:00.00</span>
       </div>
     </div>
 
-    <!-- 顶部 HUD：敌人生命与护盾状态 -->
-    <div class="hud-top">
+    <!-- 右侧 HUD：数据监测器与目标状态面板 -->
+    <div class="hud-right">
+      <!-- 1. 受击频率探测器 -->
+      <div class="freq-monitor-panel">
+        <div class="panel-header">
+          <div class="panel-title">FREQUENCY</div>
+          <div class="panel-badge">LIVE</div>
+        </div>
+        <div class="freq-display">
+          <div class="freq-value-row">
+            <span class="freq-number" id="freq-num">0.00</span>
+            <span class="freq-unit">Hz</span>
+          </div>
+          <div class="freq-status" id="freq-status">IDLE</div>
+        </div>
+        <!-- 实时受击脉冲波形示波器 -->
+        <canvas id="freq-waveform" width="220" height="48"></canvas>
+        <div class="freq-footnote">
+          <div class="footnote-item">
+            <span class="fn-label">BASE:</span>
+            <span class="fn-val">3.33 Hz</span>
+          </div>
+          <div class="footnote-item">
+            <span class="fn-label">MULT:</span>
+            <span class="fn-val" id="freq-multiplier">1.00x</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 目标状态面板 -->
       <div class="target-card">
         <div class="target-meta">
-          <span class="target-tag" id="boss-tag">TARGET 01 // SENTINEL CORE</span>
+          <span class="target-tag" id="boss-tag">STAGE 1</span>
           <span class="target-hp-label" id="boss-hp-text">HP: 70 / 70</span>
         </div>
         <div class="hp-bar-track">
@@ -51,48 +79,19 @@
         </div>
         <div class="shield-state-line" id="shield-status-line">
           <span class="status-dot shield-on"></span>
-          <span id="shield-status-text">旋转护盾：防御偏转中 (4/4 弱点激活)</span>
+          <span id="shield-status-text">SHIELD: 6</span>
           <div class="shield-recharge-track" id="shield-recharge-container" style="display: none;">
             <div class="shield-recharge-fill" id="shield-recharge-bar"></div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- 右侧 HUD：多普勒核心数据监测器（敌方受击频率） -->
-    <div class="hud-right">
-      <div class="freq-monitor-panel">
-        <div class="panel-header">
-          <div class="panel-title">HIT FREQUENCY DETECTOR</div>
-          <div class="panel-badge">REALTIME</div>
-        </div>
-        <div class="freq-display">
-          <div class="freq-value-row">
-            <span class="freq-number" id="freq-num">0.00</span>
-            <span class="freq-unit">Hz</span>
-          </div>
-          <div class="freq-status" id="freq-status">TARGET IDLE</div>
-        </div>
-        <!-- 实时受击脉冲波形示波器 -->
-        <canvas id="freq-waveform" width="220" height="48"></canvas>
-        <div class="freq-footnote">
-          <div class="footnote-item">
-            <span class="fn-label">基准射速:</span>
-            <span class="fn-val">3.33 Hz (0.30s/发)</span>
-          </div>
-          <div class="footnote-item">
-            <span class="fn-label">多普勒增益:</span>
-            <span class="fn-val" id="freq-multiplier">1.00x</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 技能 HUD 状态槽 -->
+      <!-- 3. 技能 HUD 状态槽 -->
       <div class="skills-panel">
         <div class="skill-slot" id="slot-skill1">
           <div class="skill-key">J</div>
           <div class="skill-info">
-            <div class="skill-name">折跃闪现</div>
+            <div class="skill-name">折跃</div>
             <div class="skill-status" id="skill1-status">READY</div>
           </div>
         </div>
@@ -133,11 +132,16 @@
       </div>
     </div>
 
+    <!-- 移动限制提示 Toast (第一关破盾前奇数次进入时限制移动) -->
+    <div class="movement-locked-toast" id="movement-locked-toast" style="display: none;">
+      <div class="toast-title">稍等</div>
+    </div>
+
     <!-- 底部操作指示器与玩家三滴血槽 -->
     <div class="hud-bottom">
       <!-- 玩家三滴血能量晶格槽 -->
       <div class="player-hp-card" id="player-hp-card">
-        <span class="player-hp-tag">HULL INTEGRITY</span>
+        <span class="player-hp-tag">HULL</span>
         <div class="hp-cells" id="player-hp-cells">
           <span class="hp-cell active"></span>
           <span class="hp-cell active"></span>
@@ -146,36 +150,32 @@
       </div>
 
       <div class="controls-hint" id="controls-hint">
-        <span class="key-cap">W</span><span class="key-cap">A</span><span class="key-cap">S</span><span class="key-cap">D</span> 推进 &nbsp;|&nbsp;
-        <span class="key-cap">J</span> 折跃闪现 &nbsp;|&nbsp;
-        <span class="key-cap">K</span> 反射护盾
+        <span class="key-cap">W</span><span class="key-cap">A</span><span class="key-cap">S</span><span class="key-cap">D</span> 移动 &nbsp;|&nbsp;
+        <span class="key-cap">J</span> 折跃
       </div>
     </div>
 
-    <!-- 全景战术选关大厅 (首页与结算直接进入) -->
+    <!-- 全景战术选关大厅 (开发模式备用) -->
     <div class="mission-hub" id="mission-hub">
       <div class="hub-header">
-        <div class="hub-badge">DOPPLER TACTICAL MATRIX // 战术验证大厅</div>
-        <h1 class="hub-title">选择验证阶段</h1>
-        <p class="hub-subtitle">每个不同弱点数均由不同物理机制触发 · 点击阶段卡片即刻开战</p>
+        <div class="hub-badge">DEBUG // SELECT STAGE</div>
+        <h1 class="hub-title">关卡测试</h1>
+        <p class="hub-subtitle">测试验证模式</p>
       </div>
 
       <div class="mission-cards-grid" id="mission-cards-grid">
-        <!-- 由 main.js 动态渲染生成带高亮动效的 7 张阶段卡片 -->
+        <!-- 由 main.js 动态渲染生成 -->
       </div>
     </div>
 
     <!-- 游戏开始与结算遮罩弹窗 -->
     <div class="overlay hidden" id="game-overlay" style="display: none;">
       <div class="overlay-card">
-        <div class="card-badge" id="overlay-badge">MISSION 01</div>
-        <h1 class="card-title" id="overlay-title">多普勒突击</h1>
-        <p class="card-desc" id="overlay-desc" style="text-align: center; margin-bottom: 24px;">
-          战机已配置自导追踪火控系统。<br/>
-          探索击破敌方哨兵核心的方法。
-        </p>
-        <button class="action-btn" id="start-btn">开始游戏</button>
-        <button class="action-btn secondary-btn" id="hub-btn">返回战术大厅</button>
+        <div class="card-badge" id="overlay-badge" style="display: none;"></div>
+        <h1 class="card-title" id="overlay-title">STAGE 1</h1>
+        <p class="card-desc" id="overlay-desc" style="text-align: center; margin-bottom: 24px;"></p>
+        <button class="action-btn" id="start-btn">START</button>
+        <button class="action-btn secondary-btn" id="hub-btn">返回</button>
       </div>
     </div>
   </div>

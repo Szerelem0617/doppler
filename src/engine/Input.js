@@ -9,14 +9,35 @@ export class InputManager {
     // 技能触发标记 (单次按下触发)
     this.skill1Triggered = false; // J: 折跃闪现
 
+    // 移动限制状态与拦截回调 (第一关破盾前限制)
+    this.movementRestricted = false;
+    this.onMovementRestrictedAttempt = null;
+
     this.initEvents();
+  }
+
+  setMovementRestricted(restricted, onAttemptCallback = null) {
+    this.movementRestricted = restricted;
+    if (onAttemptCallback) {
+      this.onMovementRestrictedAttempt = onAttemptCallback;
+    }
   }
 
   initEvents() {
     window.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
+
+      const moveKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyJ'];
+      if (this.movementRestricted && moveKeys.includes(e.code)) {
+        if (this.onMovementRestrictedAttempt) {
+          this.onMovementRestrictedAttempt();
+        }
+      }
+
       if (e.code === 'KeyJ') {
-        this.skill1Triggered = true; // J 键: 折跃闪现
+        if (!this.movementRestricted) {
+          this.skill1Triggered = true; // J 键: 折跃闪现
+        }
       }
     });
 
@@ -50,6 +71,19 @@ export class InputManager {
     let dx = 0;
     let dy = 0;
 
+    const hasMoveKey = 
+      this.keys['KeyW'] || this.keys['ArrowUp'] ||
+      this.keys['KeyS'] || this.keys['ArrowDown'] ||
+      this.keys['KeyA'] || this.keys['ArrowLeft'] ||
+      this.keys['KeyD'] || this.keys['ArrowRight'];
+
+    if (this.movementRestricted) {
+      if (hasMoveKey && this.onMovementRestrictedAttempt) {
+        this.onMovementRestrictedAttempt();
+      }
+      return { x: 0, y: 0 };
+    }
+
     if (this.keys['KeyW'] || this.keys['ArrowUp']) dy -= 1;
     if (this.keys['KeyS'] || this.keys['ArrowDown']) dy += 1;
     if (this.keys['KeyA'] || this.keys['ArrowLeft']) dx -= 1;
@@ -67,6 +101,9 @@ export class InputManager {
 
   // 消费一次 J 键折跃闪现触发
   consumeSkill1() {
+    if (this.movementRestricted) {
+      return false;
+    }
     if (this.skill1Triggered) {
       this.skill1Triggered = false;
       return true;

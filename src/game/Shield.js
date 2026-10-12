@@ -17,7 +17,7 @@ export class Shield {
     this.weakpoints = new Array(this.count).fill(true);
 
     this.isBroken = false;
-    this.rechargeDuration = 2.0; // 破盾后暴露时间 (2.0s 充裕输出窗口)
+    this.rechargeDuration = 1.45; // 破盾后暴露时间 (1.45s 严格输出窗口)
     this.rechargeTimer = 0;
 
     // 碎裂顿挫无敌机制 (0.35s 碎盾顿挫无敌帧，提供破盾与斩杀间的战略喘息与走位容错窗口)
@@ -33,7 +33,7 @@ export class Shield {
   }
 
   // 动态切换弱点配置
-  setConfiguration(count, rechargeDuration = 2.0) {
+  setConfiguration(count, rechargeDuration = 1.45) {
     this.count = count;
     this.rechargeDuration = rechargeDuration;
     this.weakpoints = new Array(this.count).fill(true);

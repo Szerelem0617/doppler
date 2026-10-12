@@ -30,7 +30,7 @@ export class Boss {
 
     this.initialWeakpoints = this.phaseWeakpoints ? this.phaseWeakpoints[0] : (config.weakpoints || 4);
     this.shield = new Shield(this, this.initialWeakpoints, 88, 0.30);
-    this.shield.rechargeDuration = 2.0; // 破盾后暴露虚弱攻击时间窗口 (结合 0.35s 碎裂顿挫无敌帧，提供充裕容错与输出期)
+    this.shield.rechargeDuration = 1.45; // 破盾后暴露虚弱攻击时间窗口 (1.45s 严格输出期)
 
     // 弹幕配置
     this.enableBullets = config.enableBullets !== false;
@@ -40,6 +40,9 @@ export class Boss {
 
     this.snipeTimer = 0;
     this.snipeInterval = 1.8;
+
+    this.brokenAttackTimer = 0;
+    this.brokenAttackInterval = 0.75; // 破盾暴露状态下的核心超载自卫射击节拍
 
     this.bullets = [];
     this.afterimages = [];
@@ -52,6 +55,8 @@ export class Boss {
     this.springPunchDuration = 0.28;
     this.springPunchTarget = { x: x, y: y };
     this.springPunchStart = { x: x, y: y };
+    this.springPunchAngle = Math.PI / 2;
+    this.springPunchDist = 75;
 
     // 视觉特效
     this.rotation = 0;
@@ -117,7 +122,7 @@ export class Boss {
     // 护盾自然过载超时恢复：保持当前阶段的盾数！
     if (wasBroken && !this.shield.isBroken) {
       const currentShieldCount = this.phaseWeakpoints ? this.phaseWeakpoints[this.currentPhaseIndex] : this.initialWeakpoints;
-      const rechargeDur = 2.0;
+      const rechargeDur = 1.45;
       this.shield.setConfiguration(currentShieldCount, rechargeDur);
     }
 
@@ -142,8 +147,8 @@ export class Boss {
       }
     }
 
-    // 护盾内部入侵判定：若护盾未破，玩家闪现或移动进入护盾内部，触发机械弹簧拳重击与击飞
-    if (this.shield && !this.shield.isBroken && player && !player.isDead) {
+    // 护盾防线入侵判定：无论护盾是否破碎，若玩家闪现或移动进入 BOSS 防线内部 (<= shield.radius)，均触发机械弹簧拳重击与击飞
+    if (this.shield && player && !player.isDead) {
       const distToPlayer = Math.hypot(player.x - this.x, player.y - this.y);
       if (distToPlayer <= this.shield.radius) {
         this.invadeTimer += dt;
@@ -155,18 +160,38 @@ export class Boss {
           this.springPunchStart = { x: this.x, y: this.y };
           this.springPunchTarget = { x: player.x, y: player.y };
 
+          const pDx = player.x - this.x;
+          const pDy = player.y - this.y;
+          const pDist = Math.hypot(pDx, pDy);
+          this.springPunchAngle = pDist > 0.001 ? Math.atan2(pDy, pDx) : Math.PI / 2;
+          this.springPunchDist = Math.max(pDist + 15, 75);
+
           audio.playSpringPunch();
           player.takeDamage(1);
 
-          // 4 弱点专属机制：以严格恒定的 550px/s 速度匀速滑退 1.05s，确保连续 4 发子弹多普勒到达周期严格锁定为 0.33s (90度)！
+          // 弹簧拳攻击命中战机：以 550px/s 恒速击退至显示边缘为止，击退总距离由战机与 Boss 的相对位置决定
           const dx = player.x - this.x;
           const dy = player.y - this.y;
-          const currentWp = (this.shield && !this.shield.isBroken) ? this.shield.count : this.initialWeakpoints;
-          if (currentWp === 4) {
-            player.applyKnockback(dx, dy, 550, 1.05, 'CONSTANT');
-          } else {
-            player.applyKnockback(dx, dy, 850, 0.35, 'DECAY');
-          }
+          let len = Math.hypot(dx, dy);
+          const ux = len > 0.001 ? dx / len : 0;
+          const uy = len > 0.001 ? dy / len : 1;
+
+          const speed = 550; // 匀速滑退基准速度 550px/s (锁定多普勒到达节拍)
+          const pad = 36;
+          const virtualW = 800;
+          const virtualH = 800;
+          let distToEdge = Infinity;
+
+          if (ux > 0.001) distToEdge = Math.min(distToEdge, (virtualW - pad - player.x) / ux);
+          else if (ux < -0.001) distToEdge = Math.min(distToEdge, (pad - player.x) / ux);
+
+          if (uy > 0.001) distToEdge = Math.min(distToEdge, (virtualH - pad - player.y) / uy);
+          else if (uy < -0.001) distToEdge = Math.min(distToEdge, (pad - player.y) / uy);
+
+          if (!isFinite(distToEdge) || distToEdge <= 0) distToEdge = 550;
+          const duration = distToEdge / speed;
+
+          player.applyKnockback(ux, uy, speed, duration, 'CONSTANT');
         }
       } else {
         // 离开护盾内部，平滑衰减入侵计时
@@ -176,8 +201,19 @@ export class Boss {
       this.invadeTimer = 0;
     }
 
-    // 确定性弹幕发射 (破盾期间攻击能力不受任何影响)
+    // 确定性弹幕发射 (破盾期间核心自卫与常规弹幕)
     if (this.enableBullets) {
+      // 破盾暴露期的核心超载自卫弹幕 (Quad Flank Defense Barrage)
+      if (this.shield && this.shield.isBroken && !this.isDead) {
+        this.brokenAttackTimer += dt;
+        if (this.brokenAttackTimer >= this.brokenAttackInterval) {
+          this.fireBrokenShieldDefense();
+          this.brokenAttackTimer = 0;
+        }
+      } else {
+        this.brokenAttackTimer = 0;
+      }
+
       // 攻击节拍支持各阶段深度调谐：第二阶段 (8 弱点纯走位大考) 与第五阶段 (9 弱点终局大狂暴) 专用攻击节奏
       const curRadialInterval = (this.currentPhaseIndex >= 2) ? 6.8 : this.radialInterval;
       const curSnipeInterval = (this.currentPhaseIndex >= 2) ? 6.8 : (this.currentPhaseIndex === 1) ? 2.5 : this.snipeInterval;
@@ -194,6 +230,21 @@ export class Boss {
         this.snipeTimer = 0;
       }
     }
+  }
+
+  // 破盾暴露期的核心超载自卫弹幕 (Quad Flank Defense Barrage)
+  // 当护盾破碎核心暴露时，BOSS 紧急启动侧翼应急防御火炮，封锁侧翼迂回空间，留出中路直接对冲通道
+  fireBrokenShieldDefense() {
+    audio.playBossShoot();
+    const baseAngle = Math.PI / 2; // 正向下 (90°)
+    const speed = 270;
+    const offsets = [-1.22, -0.58, 0.58, 1.22];
+    offsets.forEach(offset => {
+      const a = baseAngle + offset;
+      const sx = this.x + Math.cos(a) * (this.radius + 6);
+      const sy = this.y + Math.sin(a) * (this.radius + 6);
+      this.bullets.push(new BossBullet(sx, sy, Math.cos(a) * speed, Math.sin(a) * speed));
+    });
   }
 
   // 第五阶段护盾生成时向玩家发射密集弹幕雨
@@ -309,21 +360,6 @@ export class Boss {
   }
 
   render(ctx) {
-    // 护盾内部入侵红色警示圈
-    if (this.invadeTimer > 0 && !this.shield.isBroken) {
-      const alpha = Math.min(1, this.invadeTimer / this.invadeThreshold);
-      ctx.save();
-      ctx.strokeStyle = `rgba(255, 42, 109, ${0.4 + 0.6 * alpha})`;
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([6, 6]);
-      ctx.shadowColor = '#ff2a6d';
-      ctx.shadowBlur = 12;
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.shield.radius, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
     // 机械弹簧拳出击特效
     if (this.springPunchActive) {
       this.renderSpringPunch(ctx);
@@ -494,7 +530,7 @@ export class Boss {
     ctx.stroke();
   }
 
-  // 绘制机械弹簧拳出击动画
+  // 绘制机械弹簧拳出击动画 (严格朝向战机受击时的方向出拳)
   renderSpringPunch(ctx) {
     const progress = Math.min(1, this.springPunchTimer / this.springPunchDuration);
     // 前 35% 极速向前出拳，后 65% 回缩
@@ -507,15 +543,9 @@ export class Boss {
 
     const sx = this.springPunchStart.x;
     const sy = this.springPunchStart.y;
-    const tx = this.springPunchTarget.x;
-    const ty = this.springPunchTarget.y;
-
-    const dx = tx - sx;
-    const dy = ty - sy;
-    const totalDist = Math.hypot(dx, dy);
-    const angle = Math.atan2(dy, dx);
-
-    const punchDist = Math.max(30, totalDist * reach);
+    const angle = this.springPunchAngle !== undefined ? this.springPunchAngle : Math.PI / 2;
+    const maxDist = this.springPunchDist || 75;
+    const punchDist = maxDist * reach;
 
     ctx.save();
     ctx.translate(sx, sy);
@@ -582,7 +612,7 @@ export class Boss {
     if (this.currentPhaseIndex < this.phaseWeakpoints.length) {
       const nextShieldCount = this.phaseWeakpoints[this.currentPhaseIndex];
       this.currentPhaseHp = this.phaseHps[this.currentPhaseIndex];
-      const rechargeDur = 2.0;
+      const rechargeDur = 1.45;
       // 立刻恢复下一个阶段盾！
       this.shield.setConfiguration(nextShieldCount, rechargeDur);
       this.shield.isBroken = false;
@@ -591,6 +621,7 @@ export class Boss {
       // 转阶时清零发射与入侵计时器，给予平滑预警窗口与完整入侵判定周期
       this.radialTimer = 0;
       this.snipeTimer = (this.currentPhaseIndex === 1) ? 1.95 : 0;
+      this.brokenAttackTimer = 0;
       this.invadeTimer = 0;
 
       // 第五阶段 (9 弱点)：护盾生成时向玩家发射密集散弹雨
@@ -621,9 +652,12 @@ export class Boss {
     this.radialTimer = 0;
     this.burstCount = 0;
     this.snipeTimer = 0;
+    this.brokenAttackTimer = 0;
     this.invadeTimer = 0;
     this.springPunchActive = false;
     this.springPunchTimer = 0;
+    this.springPunchAngle = Math.PI / 2;
+    this.springPunchDist = 75;
     this.bullets = [];
     this.afterimages = [];
     this.deathExplosion = [];

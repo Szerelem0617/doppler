@@ -59,6 +59,43 @@ const overlayBadge = document.getElementById('overlay-badge');
 const startBtn = document.getElementById('start-btn');
 const hubBtn = document.getElementById('hub-btn');
 
+// 生产版本与开发调试模式判定
+// 端口 5174 或 URL 带 ?dev 时激活完整开发调试版本（全景选关大厅与 TAS 面板）；
+// 端口 5173 / 预览端口 或发布环境默认提供极简纯净生产版本
+export const IS_PROD_MODE = window.location.port !== '5174' && !window.location.search.includes('dev');
+if (!IS_PROD_MODE) {
+  document.body.classList.add('dev-mode');
+}
+
+// 移动限制提示 Toast (奇数次第一关破盾前按键提示: "稍等")
+const movementLockedToast = document.getElementById('movement-locked-toast');
+let lockNoticeTimeout = null;
+
+function triggerMovementLockedNotice() {
+  if (!movementLockedToast) return;
+  movementLockedToast.style.display = 'flex';
+  movementLockedToast.classList.remove('shake');
+  void movementLockedToast.offsetWidth;
+  movementLockedToast.classList.add('visible', 'shake');
+
+  if (lockNoticeTimeout) clearTimeout(lockNoticeTimeout);
+  lockNoticeTimeout = setTimeout(() => {
+    movementLockedToast.classList.remove('visible');
+    setTimeout(() => {
+      if (!movementLockedToast.classList.contains('visible')) {
+        movementLockedToast.style.display = 'none';
+      }
+    }, 200);
+  }, 1000);
+}
+
+function hideMovementLockedToast() {
+  if (!movementLockedToast) return;
+  if (lockNoticeTimeout) clearTimeout(lockNoticeTimeout);
+  movementLockedToast.classList.remove('visible', 'shake');
+  movementLockedToast.style.display = 'none';
+}
+
 // 全景战术选关大厅元素
 const missionHub = document.getElementById('mission-hub');
 const missionCardsGrid = document.getElementById('mission-cards-grid');
@@ -126,6 +163,7 @@ const STAGE_META = {
 const completedStages = new Set();
 let recommendedStage = '1';
 let isHubOpen = true;
+let stage1EntryCount = 0; // 第一关进入次数计数器 (奇数次限制移动，偶数次不限制)
 
 // 游戏状态单一可信数据源 (Single Source of Truth)
 let input;
@@ -291,6 +329,8 @@ function startStageFromHub(stg) {
 function initGame() {
   input = new InputManager(canvas);
   freqMeter = new FrequencyMeter(freqCanvas, 3.33);
+  window.input = input;
+  window.freqMeter = freqMeter;
 
   initStars(80);
   resizeCanvas();
@@ -318,21 +358,26 @@ function initGame() {
     openMissionHub();
   });
 
+  // 点击时停提示层也可立即解除时停
+  freezePrompt.addEventListener('click', () => {
+    if (isTimeFrozen) {
+      isTimeFrozen = false;
+      freezePrompt.style.display = 'none';
+    }
+  });
+
   // 键盘事件全局监听
   window.addEventListener('keydown', (e) => {
-    // 按 Escape 随时返回选拔大厅
-    if (e.code === 'Escape') {
+    // 按 Escape 随时返回选拔大厅 (仅开发调试模式可用)
+    if (!IS_PROD_MODE && e.code === 'Escape') {
       openMissionHub();
       return;
     }
 
-    // 首次破盾时停状态下：按下 WASD 或方向键立即解除时停
+    // 首次破盾时停状态下：按下任意按键立即解除时停投入战斗
     if (isTimeFrozen) {
-      const moveKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
-      if (moveKeys.includes(e.code)) {
-        isTimeFrozen = false;
-        freezePrompt.style.display = 'none';
-      }
+      isTimeFrozen = false;
+      freezePrompt.style.display = 'none';
       return;
     }
 
@@ -341,7 +386,7 @@ function initGame() {
 
     // 关卡准备中按 Enter 也可以直接开战
     if (!isRunning && (e.code === 'Enter' || e.code === 'NumpadEnter')) {
-      startGame();
+      handleStartBtnClick();
     }
   });
 
@@ -383,8 +428,22 @@ function initGame() {
     });
   }
 
-  // 默认启动直接打开全景选关大厅！
-  openMissionHub();
+  // 默认启动模式分流：
+  // 生产模式：直接初始化第一关并展示开始弹窗，无任何选关和大厅阻隔！
+  // 开发模式：打开全景选关与 TAS 调试大厅
+  if (IS_PROD_MODE) {
+    closeMissionHub();
+    switchStage('1', false);
+    overlayBadge.style.display = 'none';
+    overlayBadge.textContent = '';
+    overlayTitle.textContent = 'STAGE 1';
+    overlayDesc.innerHTML = '';
+    startBtn.textContent = 'START';
+    overlay.style.display = 'flex';
+    overlay.classList.remove('hidden');
+  } else {
+    openMissionHub();
+  }
 
   requestAnimationFrame(gameLoop);
 }
@@ -401,9 +460,16 @@ function handleStartBtnClick() {
     return;
   }
 
-  // 终极 Boss 决战结算后点击直接返回战术大厅
-  if (currentStage === '2-boss' && isVictory) {
+  // 开发模式下终极 Boss 结算后点击返回大厅
+  if (!IS_PROD_MODE && currentStage === '2-boss' && isVictory) {
     openMissionHub();
+    return;
+  }
+
+  // 生产模式下如果当前是 2-boss 结算（无论是通关还是失败重开），都会从第一关重新开始
+  if (IS_PROD_MODE && currentStage === '2-boss') {
+    switchStage('1', false);
+    startGame();
     return;
   }
 
@@ -419,14 +485,21 @@ function switchStage(stg, showOverlay = false) {
     stageTabs[k].classList.toggle('active', k === stg);
   });
 
-  speedrunTimerCard.style.display = stg !== '1' ? 'flex' : 'none';
+  speedrunTimerCard.style.display = 'flex';
 
   initStage(stg);
 
   if (showOverlay) {
     const meta = STAGE_META[stg] || STAGE_META['1'];
-    overlayBadge.textContent = `${meta.code.toUpperCase()} // ${meta.tag}`;
-    overlayTitle.textContent = `${meta.name}`;
+    if (IS_PROD_MODE) {
+      overlayBadge.style.display = 'none';
+      overlayBadge.textContent = '';
+      overlayTitle.textContent = meta.code;
+    } else {
+      overlayBadge.style.display = 'inline-block';
+      overlayBadge.textContent = `${meta.code.toUpperCase()} // ${meta.tag}`;
+      overlayTitle.textContent = `${meta.name}`;
+    }
     overlayDesc.innerHTML = `
       <strong>【核心机制】${meta.mechanic}</strong><br/>
       <span style="color:#00ffff;font-weight:700">【破盾走位指南】</span> ${meta.instruction}<br/>
@@ -453,32 +526,29 @@ function initStage(stg) {
 
   if (stg === '1') {
     enemyTarget = new Enemy(enemyX, enemyY);
-    bossTag.textContent = 'TARGET 01 // SENTINEL CORE';
+    bossTag.textContent = 'STAGE 1';
   } else if (stg === '2-s7') {
     enemyTarget = new Boss(enemyX, enemyY, { hp: 120, weakpoints: 7, enableBullets: false });
-    bossTag.textContent = 'STAGE 2-s7 // 7 WEAKPOINTS (FORWARD PUSH)';
+    bossTag.textContent = 'STAGE 2-s7';
   } else if (stg === '2-s5') {
     enemyTarget = new Boss(enemyX, enemyY, { hp: 120, weakpoints: 5, enableBullets: false });
-    bossTag.textContent = 'STAGE 2-s5 // 5 WEAKPOINTS (BACK + ORBIT)';
+    bossTag.textContent = 'STAGE 2-s5';
   } else if (stg === '2-s8') {
     enemyTarget = new Boss(enemyX, enemyY, { hp: 120, weakpoints: 8, enableBullets: false });
-    bossTag.textContent = 'STAGE 2-s8 // 8 WEAKPOINTS (SPLIT-4 BLINK 1-REV)';
+    bossTag.textContent = 'STAGE 2-s8';
   } else if (stg === '2-s4') {
     enemyTarget = new Boss(enemyX, enemyY, { hp: 120, weakpoints: 4, enableBullets: false });
-    bossTag.textContent = 'STAGE 2-s4 // 4 WEAKPOINTS (SPRING PUNCH)';
+    bossTag.textContent = 'STAGE 2-s4';
   } else if (stg === '2-s9') {
-    // 9 弱点专属关：40° 密位极限多普勒高频击穿 (无冲锋)
     enemyTarget = new Boss(enemyX, enemyY, { hp: 150, weakpoints: 9, enableBullets: false });
-    bossTag.textContent = 'STAGE 2-s9 // 9 WEAKPOINTS (HIGH FREQ BURST)';
+    bossTag.textContent = 'STAGE 2-s9';
   } else if (stg === '2-boss') {
-    // 2-boss 综合终极决战：五阶段顺序 [7, 5, 8, 4, 9]，破盾转阶，血量分配 [7, 7, 7, 9, 11]
-    // 严格统一 1.45s 暴露时间：阶段 2 分配 7 血 (进圈前置斩杀)，阶段 3 分配 9 血 (出拳前圈内打 2 下 + 暴露期多普勒灌 7 下)
     enemyTarget = new Boss(enemyX, enemyY, {
       phaseSequence: [7, 5, 8, 4, 9],
       phaseHps: [7, 7, 7, 9, 11],
       enableBullets: true
     });
-    bossTag.textContent = 'STAGE 2-BOSS // TITAN MATRIX (PHASE 1/5: 7 WP | 7 HP)';
+    bossTag.textContent = 'STAGE 2';
   }
 
   if (!player) {
@@ -496,6 +566,10 @@ function initStage(stg) {
   lastTime = 0;
   timerDigits.textContent = '00:00.00';
   updatePlayerHpUI();
+
+  window.enemyTarget = enemyTarget;
+  window.player = player;
+  window.currentStage = currentStage;
 }
 
 function startGame() {
@@ -503,6 +577,21 @@ function startGame() {
   audio.resume();
 
   const playerStartY = 710;
+
+  // 奇数次进入第一关在破盾前限制移动，偶数次不限制
+  if (currentStage === '1') {
+    stage1EntryCount++;
+    const isOddEntry = (stage1EntryCount % 2 === 1);
+    if (isOddEntry) {
+      input.setMovementRestricted(true, triggerMovementLockedNotice);
+    } else {
+      input.setMovementRestricted(false);
+      hideMovementLockedToast();
+    }
+  } else {
+    input.setMovementRestricted(false);
+    hideMovementLockedToast();
+  }
 
   enemyTarget.reset();
   player.reset(VIRTUAL_WIDTH / 2, playerStartY);
@@ -532,6 +621,7 @@ function showVictory() {
   isRunning = false;
   isTimeFrozen = false;
   freezePrompt.style.display = 'none';
+  hideMovementLockedToast();
 
   completedStages.add(currentStage);
 
@@ -542,41 +632,59 @@ function showVictory() {
   const isTouring = tas && tas.handleVictory(timeStr);
   if (tasRunBtn) tasRunBtn.classList.remove('active');
 
-  const nextMap = {
-    '1': '2-s7',
-    '2-s7': '2-s5',
-    '2-s5': '2-s8',
-    '2-s8': '2-s4',
-    '2-s4': '2-s9',
-    '2-s9': '2-boss',
-    '2-boss': null
-  };
-
-  const next = nextMap[currentStage];
-  nextStageTarget = next;
-  if (next) {
-    recommendedStage = next;
-  }
-
-  overlayBadge.textContent = `${currentStage.toUpperCase()} VERIFIED ✓`;
-  overlayTitle.textContent = currentStage === '2-boss' ? '终极泰坦决战通关！' : '阶段测试通关！';
-
-  if (next) {
-    overlayDesc.innerHTML = `
-      <strong>${currentStage.toUpperCase()} 机制验证成功！</strong><br/><br/>
-      测试耗时：<strong style="color:#00ff88;font-size:18px;">${timeStr}</strong><br/>
-      你已成功掌握该阶段破盾机制。<br/>
-      点击下方按钮直接挺进 <strong>${next.toUpperCase()}</strong>！
-    `;
-    startBtn.textContent = `进入下一测试关 ${next.toUpperCase()} [CLICK]`;
+  if (IS_PROD_MODE) {
+    overlayBadge.style.display = 'none';
+    overlayBadge.textContent = '';
+    if (currentStage === '1') {
+      nextStageTarget = '2-boss';
+      overlayTitle.textContent = 'STAGE 1 CLEARED';
+      overlayDesc.innerHTML = `<div style="font-size:20px; font-weight:700; color:#00ff88; letter-spacing:1px; margin-bottom:12px;">TIME: ${timeStr}</div>`;
+      startBtn.textContent = '进入下一关';
+    } else {
+      // 第二关通关后从第一关重新开始
+      nextStageTarget = '1';
+      overlayTitle.textContent = 'STAGE 2 CLEARED';
+      overlayDesc.innerHTML = `<div style="font-size:20px; font-weight:700; color:#00ff88; letter-spacing:1px; margin-bottom:12px;">TIME: ${timeStr}</div>`;
+      startBtn.textContent = '重新开始';
+    }
   } else {
-    overlayDesc.innerHTML = `
-      <strong>五阶段终极泰坦决战全部通关！</strong><br/><br/>
-      总挑战耗时：<strong style="color:#00ff88;font-size:20px;">${timeStr}</strong><br/>
-      恭喜完整击破 [7 → 5 → 8 → 4 → 9] 全部多普勒护盾阶段，成为真正的多普勒王牌飞行员！
-    `;
-    startBtn.textContent = '返回战术大厅 [CLICK]';
-    nextStageTarget = null;
+    // 开发模式下的测试流转
+    const nextMap = {
+      '1': '2-s7',
+      '2-s7': '2-s5',
+      '2-s5': '2-s8',
+      '2-s8': '2-s4',
+      '2-s4': '2-s9',
+      '2-s9': '2-boss',
+      '2-boss': null
+    };
+
+    const next = nextMap[currentStage];
+    nextStageTarget = next;
+    if (next) {
+      recommendedStage = next;
+    }
+
+    overlayBadge.textContent = `${currentStage.toUpperCase()} VERIFIED ✓`;
+    overlayTitle.textContent = currentStage === '2-boss' ? '终极泰坦决战通关！' : '阶段测试通关！';
+
+    if (next) {
+      overlayDesc.innerHTML = `
+        <strong>${currentStage.toUpperCase()} 机制验证成功！</strong><br/><br/>
+        测试耗时：<strong style="color:#00ff88;font-size:18px;">${timeStr}</strong><br/>
+        你已成功掌握该阶段破盾机制。<br/>
+        点击下方按钮直接挺进 <strong>${next.toUpperCase()}</strong>！
+      `;
+      startBtn.textContent = `进入下一测试关 ${next.toUpperCase()} [CLICK]`;
+    } else {
+      overlayDesc.innerHTML = `
+        <strong>五阶段终极泰坦决战全部通关！</strong><br/><br/>
+        总挑战耗时：<strong style="color:#00ff88;font-size:20px;">${timeStr}</strong><br/>
+        恭喜完整击破 [7 → 5 → 8 → 4 → 9] 全部多普勒护盾阶段，成为真正的多普勒王牌飞行员！
+      `;
+      startBtn.textContent = '返回战术大厅 [CLICK]';
+      nextStageTarget = null;
+    }
   }
 
   overlay.style.display = 'flex';
@@ -592,8 +700,8 @@ function showGameOver() {
   isGameOver = true;
   isRunning = false;
   isTimeFrozen = false;
-  nextStageTarget = null;
   freezePrompt.style.display = 'none';
+  hideMovementLockedToast();
 
   if (tas) {
     tas.handleGameOver();
@@ -601,13 +709,23 @@ function showGameOver() {
   if (tasRunBtn) tasRunBtn.classList.remove('active');
   if (tasRunAllBtn) tasRunAllBtn.classList.remove('active');
 
-  overlayBadge.textContent = 'MISSION FAILED';
-  overlayTitle.textContent = '战机损毁';
-  overlayDesc.innerHTML = `
-    能量护甲耗尽（三滴血扣完）。<br/>
-    按 <strong>[J] 瞬移折跃</strong> 调整站位，按 <strong>[K] 开启力场护盾</strong> 抵御反弹致命弹幕！
-  `;
-  startBtn.textContent = '重试本关 [点击重开]';
+  if (IS_PROD_MODE) {
+    // 生产模式下：第二关失败后从第一关重新开始，第一关失败也是重新开始第一关
+    nextStageTarget = '1';
+    overlayBadge.style.display = 'none';
+    overlayBadge.textContent = '';
+    overlayTitle.textContent = 'GAME OVER';
+    overlayDesc.innerHTML = '';
+    startBtn.textContent = '重新开始';
+  } else {
+    nextStageTarget = null;
+    overlayBadge.style.display = 'none';
+    overlayBadge.textContent = '';
+    overlayTitle.textContent = 'GAME OVER';
+    overlayDesc.innerHTML = '';
+    startBtn.textContent = '重新开始';
+  }
+
   overlay.style.display = 'flex';
   overlay.classList.remove('hidden');
 }
@@ -632,11 +750,16 @@ function handleCollisions(now) {
     return;
   }
 
-  // 破盾事件即时响应 (击碎最后一处弱点瞬时回血并触发时停引导)
+  // 破盾事件即时响应 (击碎最后一处弱点瞬时回血并解除移动限制)
   if (enemyTarget.shield.justBroken) {
     enemyTarget.shield.justBroken = false;
     player.heal(1);
     updatePlayerHpUI();
+
+    if (input.movementRestricted) {
+      input.setMovementRestricted(false);
+      hideMovementLockedToast();
+    }
 
     if (currentStage === '1' && !hasShownFreezePrompt) {
       hasShownFreezePrompt = true;
@@ -734,18 +857,16 @@ function updateHUD(now) {
     bossHpText.textContent = `HP: ${Math.round(enemyTarget.hp)} / ${enemyTarget.maxHp}`;
   }
 
-  // 动态更新 Boss 标签 (针对 2-boss 呈现阶段进度与当前阶段血量)
-  if (currentStage === '2-boss' && enemyTarget.phaseWeakpoints) {
+  // 动态更新关卡标签
+  if (currentStage === '2-boss') {
     if (enemyTarget.isDead) {
-      bossTag.textContent = `STAGE 2-BOSS // TITAN MATRIX (ALL PHASES DESTROYED // VICTORY)`;
+      bossTag.textContent = 'STAGE 2 CLEARED';
     } else {
-      const curIdx = Math.min(enemyTarget.phaseWeakpoints.length - 1, enemyTarget.currentPhaseIndex);
-      const phaseNum = curIdx + 1;
-      const curWp = enemyTarget.phaseWeakpoints[curIdx];
-      const curHp = enemyTarget.currentPhaseHp !== undefined ? enemyTarget.currentPhaseHp : Math.round(enemyTarget.hp);
-      const maxHp = enemyTarget.phaseMaxHps ? enemyTarget.phaseMaxHps[curIdx] : curHp;
-      bossTag.textContent = `STAGE 2-BOSS // TITAN MATRIX (PHASE ${phaseNum}/5: ${curWp} WP | ${curHp}/${maxHp} HP)`;
+      const curIdx = Math.min((enemyTarget.phaseWeakpoints?.length || 1) - 1, enemyTarget.currentPhaseIndex || 0);
+      bossTag.textContent = `STAGE 2 [${curIdx + 1}/5]`;
     }
+  } else if (currentStage === '1') {
+    bossTag.textContent = 'STAGE 1';
   }
 
   const shield = enemyTarget.shield;
@@ -753,23 +874,15 @@ function updateHUD(now) {
 
   if (enemyTarget.isDead) {
     statusDot.className = 'status-dot';
-    shieldStatusText.innerHTML = `<span style="color:#00ff88;font-weight:700;">✦ 核心防御彻底摧毁 · 目标已歼灭</span>`;
+    shieldStatusText.textContent = 'CLEARED';
     shieldRechargeContainer.style.display = 'none';
-  } else if (shield.isShattering) {
-    statusDot.className = 'status-dot shield-shattering';
-    const remainSec = Math.max(0, shield.shatterDuration - shield.shatterTimer).toFixed(2);
-    shieldStatusText.innerHTML = `<span style="color:#ffaa00;font-weight:700;">⚡ 护盾过载崩解中！[${remainSec}s] 偏转不可穿透 · 战术后撤</span>`;
-    shieldRechargeContainer.style.display = 'block';
-    const shatterPercent = (shield.shatterTimer / shield.shatterDuration) * 100;
-    shieldRechargeBar.style.width = `${100 - shatterPercent}%`;
-    shieldRechargeBar.style.background = 'linear-gradient(90deg, #ffaa00, #ff2a6d)';
-    shieldRechargeBar.style.boxShadow = '0 0 10px #ff2a6d';
-  } else if (shield.isBroken) {
+  } else if (shield.isShattering || shield.isBroken) {
     statusDot.className = 'status-dot shield-off';
-    const remainSec = Math.max(0, shield.rechargeDuration - shield.rechargeTimer).toFixed(1);
-    shieldStatusText.textContent = `护盾过载！暴露虚弱倒计时: ${remainSec}s`;
+    shieldStatusText.textContent = 'SHIELD BROKEN';
     shieldRechargeContainer.style.display = 'block';
-    const rechargePercent = (shield.rechargeTimer / shield.rechargeDuration) * 100;
+    const rechargePercent = shield.isShattering
+      ? (1 - shield.shatterTimer / shield.shatterDuration) * 100
+      : (shield.rechargeTimer / shield.rechargeDuration) * 100;
     shieldRechargeBar.style.width = `${rechargePercent}%`;
     shieldRechargeBar.style.background = 'linear-gradient(90deg, #00f0ff, #ffea70)';
     shieldRechargeBar.style.boxShadow = '0 0 10px var(--amber-glow)';
@@ -777,7 +890,7 @@ function updateHUD(now) {
     statusDot.className = 'status-dot shield-on';
     shieldRechargeContainer.style.display = 'none';
     const activeWeakpoints = shield.weakpoints.filter(Boolean).length;
-    shieldStatusText.textContent = `旋转护盾：防御偏转中 (${activeWeakpoints}/${shield.count} 弱点)`;
+    shieldStatusText.textContent = `SHIELD: ${activeWeakpoints}`;
   }
 
   const freq = freqMeter.getFrequency();
@@ -788,29 +901,29 @@ function updateHUD(now) {
   if (freq >= 6.8) {
     freqNum.className = 'freq-number high-freq';
     freqNum.style.color = '#39ff14';
-    freqStatus.textContent = 'EXTREME DOPPLER COMPRESSION';
+    freqStatus.textContent = 'EXTREME';
     freqStatus.style.color = '#39ff14';
   } else if (freq > 4.8) {
     freqNum.className = 'freq-number high-freq';
     freqNum.style.color = '#00ffff';
-    freqStatus.textContent = 'DOPPLER COMPRESSION (HIGH)';
+    freqStatus.textContent = 'HIGH';
     freqStatus.style.color = '#00ffff';
   } else if (freq > 2.0) {
     freqNum.className = 'freq-number';
     freqNum.style.color = '#fff';
-    freqStatus.textContent = 'STANDARD EMISSION';
+    freqStatus.textContent = 'NORMAL';
     freqStatus.style.color = '#ffaa00';
   } else {
     freqNum.className = 'freq-number';
     freqNum.style.color = '#fff';
-    freqStatus.textContent = 'TARGET IDLE';
+    freqStatus.textContent = 'IDLE';
     freqStatus.style.color = '#8899aa';
   }
 
-  // J 键折跃闪现 HUD 状态
+  // J 键折跃 HUD 状态
   if (player.blinkCdTimer > 0) {
     slotSkill1.classList.remove('active');
-    skill1Status.textContent = `CD: ${player.blinkCdTimer.toFixed(1)}s`;
+    skill1Status.textContent = `${player.blinkCdTimer.toFixed(1)}s`;
     skill1Status.className = 'skill-status cooling';
   } else {
     slotSkill1.classList.remove('active');
@@ -818,7 +931,7 @@ function updateHUD(now) {
     skill1Status.className = 'skill-status';
   }
 
-  if (currentStage !== '1' && isRunning && !isVictory) {
+  if (isRunning && !isVictory) {
     timerDigits.textContent = formatTimer(speedrunSeconds);
   }
 }
@@ -876,7 +989,7 @@ function physicsStep(dt) {
   }
 
   if (!isTimeFrozen) {
-    if (currentStage !== '1' && !isVictory && !isVictoryPending) {
+    if (!isVictory && !isVictoryPending) {
       speedrunSeconds += dt;
     }
 
@@ -938,3 +1051,6 @@ function gameLoop(timestamp) {
 
 // 启动
 initGame();
+
+window.physicsStep = physicsStep;
+window.FIXED_DT = FIXED_DT;

@@ -143,7 +143,19 @@ export class Player {
       if (Math.random() < 0.6) {
         this.createAfterimage('rgba(255, 0, 85, 0.7)');
       }
-      if (this.knockbackTimer <= 0) {
+      // 触达显示边缘时立即终止击飞物理状态，恢复完全操控
+      const pad = 36;
+      if (
+        (this.knockbackVx > 0 && this.x >= canvasWidth - pad) ||
+        (this.knockbackVx < 0 && this.x <= pad) ||
+        (this.knockbackVy > 0 && this.y >= canvasHeight - pad) ||
+        (this.knockbackVy < 0 && this.y <= pad)
+      ) {
+        this.isKnockedBack = false;
+        this.knockbackVx = 0;
+        this.knockbackVy = 0;
+        this.knockbackTimer = 0;
+      } else if (this.knockbackTimer <= 0) {
         this.isKnockedBack = false;
         this.knockbackVx = 0;
         this.knockbackVy = 0;

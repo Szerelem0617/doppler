@@ -14,9 +14,9 @@ export class Enemy {
     this.radius = 28;
     this.isDead = false;
 
-    // 旋转护盾 (统一采用 6 弱点静止同步基准，破盾暴露 2.0s)
+    // 旋转护盾 (统一采用 6 弱点静止同步基准，破盾暴露 1.45s)
     this.shield = new Shield(this, 6, 78, 0.22);
-    this.shield.rechargeDuration = 2.0;
+    this.shield.rechargeDuration = 1.45;
 
     // 视觉动画参数
     this.rotation = 0;
@@ -131,21 +131,6 @@ export class Enemy {
   }
 
   render(ctx) {
-    // 渲染侵入红色预警圈
-    if (this.invadeTimer > 0 && !this.shield.isBroken) {
-      const alpha = Math.min(1, this.invadeTimer / this.invadeThreshold);
-      ctx.save();
-      ctx.strokeStyle = `rgba(255, 42, 109, ${0.4 + 0.6 * alpha})`;
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([6, 6]);
-      ctx.shadowColor = '#ff2a6d';
-      ctx.shadowBlur = 12;
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.shield.radius, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
     // 机械弹簧拳动画
     if (this.springPunchActive) {
       this.renderSpringPunch(ctx);
@@ -267,8 +252,8 @@ export class Enemy {
     const dx = tx - sx;
     const dy = ty - sy;
     const totalDist = Math.hypot(dx, dy);
-    const angle = Math.atan2(dy, dx);
-    const punchDist = Math.max(30, totalDist * reach);
+    const angle = totalDist > 0.001 ? Math.atan2(dy, dx) : Math.PI / 2;
+    const punchDist = Math.max(totalDist + 15, 75) * reach;
 
     ctx.save();
     ctx.translate(sx, sy);
