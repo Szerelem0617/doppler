@@ -1258,6 +1258,35 @@ body:not(.dev-mode) .hud-header-bar {
   text-shadow: 0 0 12px var(--cyan-glow);
 }
 
+.lb-cloud-tag {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.lb-cloud-tag.connected {
+  background: rgba(0, 255, 136, 0.15);
+  border: 1px solid rgba(0, 255, 136, 0.5);
+  color: #00ff88;
+}
+
+.lb-cloud-tag.pending {
+  background: rgba(255, 170, 0, 0.15);
+  border: 1px solid rgba(255, 170, 0, 0.5);
+  color: #ffaa00;
+}
+
+.lb-cloud-tag.pending:hover {
+  background: rgba(255, 170, 0, 0.25);
+  box-shadow: 0 0 10px rgba(255, 170, 0, 0.4);
+}
+
 .lb-subtitle {
   font-size: 13px;
   color: var(--text-secondary);

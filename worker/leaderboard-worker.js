@@ -20,28 +20,21 @@ export default {
       return new Response(null, { headers: corsHeaders });
     }
 
-    if (!env || !env.GAME_KV) {
-      if (request.method === 'GET') {
-        return Response.json({
-          total: 0,
-          items: [],
-          warning: 'GAME_KV 未在 Cloudflare 后台绑定，请在 Worker Settings 中添加 KV 绑定 GAME_KV'
-        }, { headers: corsHeaders });
-      }
-      if (request.method === 'POST') {
-        return Response.json({
-          rank: 1,
-          total: 1,
-          items: [],
-          warning: 'GAME_KV 未绑定'
-        }, { headers: corsHeaders });
-      }
-    }
+    const hasKv = Boolean(env && env.GAME_KV);
 
     // 1. 获取前 1000 名极速榜数据
     if (request.method === 'GET') {
       const url = new URL(request.url);
       const limit = Math.min(parseInt(url.searchParams.get('limit') || '1000', 10), 1000);
+
+      if (!hasKv) {
+        return Response.json({
+          total: 0,
+          items: [],
+          kvBound: false,
+          warning: 'GAME_KV 未在 Cloudflare 后台绑定。请在 Worker Settings -> KV Bindings 中添加变量名 GAME_KV'
+        }, { headers: corsHeaders });
+      }
 
       let list = [];
       try {
@@ -52,7 +45,8 @@ export default {
 
       return Response.json({
         total: list.length,
-        items: list.slice(0, limit)
+        items: list.slice(0, limit),
+        kvBound: true
       }, { headers: corsHeaders });
     }
 
@@ -76,6 +70,17 @@ export default {
       const cleanName = String(name).trim().slice(0, 20) || 'UNKNOWN PILOT';
       const cleanTime = Number(time.toFixed(3));
       const now = Date.now();
+
+      if (!hasKv) {
+        return Response.json({
+          rank: 1,
+          total: 1,
+          isNewBest: true,
+          items: [{ name: cleanName, time: cleanTime, date: now }],
+          kvBound: false,
+          warning: 'GAME_KV 未绑定，成绩已由前端本地可靠存储。'
+        }, { headers: corsHeaders });
+      }
 
       let list = [];
       try {
@@ -120,7 +125,8 @@ export default {
         rank: myRank,
         total: list.length,
         isNewBest,
-        items: list.slice(0, 1000)
+        items: list.slice(0, 1000),
+        kvBound: true
       }, { headers: corsHeaders });
     }
 

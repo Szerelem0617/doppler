@@ -15,29 +15,21 @@ async function handleLeaderboardRequest(request, env) {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // 若 Cloudflare 后台尚未绑定 GAME_KV，给出友好提示结构
-  if (!env || !env.GAME_KV) {
-    if (request.method === 'GET') {
-      return Response.json({
-        total: 0,
-        items: [],
-        warning: 'GAME_KV 未在 Cloudflare 后台绑定，请在 Pages/Worker 设置中添加 KV 绑定 GAME_KV'
-      }, { headers: corsHeaders });
-    }
-    if (request.method === 'POST') {
-      return Response.json({
-        rank: 1,
-        total: 1,
-        items: [],
-        warning: 'GAME_KV 未绑定，成绩未存入云端 KV'
-      }, { headers: corsHeaders });
-    }
-  }
+  const hasKv = Boolean(env && env.GAME_KV);
 
   // 1. 获取前 1000 名极速榜数据
   if (request.method === 'GET') {
     const url = new URL(request.url);
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '1000', 10), 1000);
+
+    if (!hasKv) {
+      return Response.json({
+        total: 0,
+        items: [],
+        kvBound: false,
+        warning: 'GAME_KV 未在 Cloudflare 后台绑定。请在 Pages 设置 -> 函数 -> KV 命名空间绑定中添加变量名 GAME_KV'
+      }, { headers: corsHeaders });
+    }
 
     let list = [];
     try {
@@ -48,7 +40,8 @@ async function handleLeaderboardRequest(request, env) {
 
     return Response.json({
       total: list.length,
-      items: list.slice(0, limit)
+      items: list.slice(0, limit),
+      kvBound: true
     }, { headers: corsHeaders });
   }
 
@@ -72,6 +65,18 @@ async function handleLeaderboardRequest(request, env) {
     const cleanName = String(name).trim().slice(0, 20) || 'UNKNOWN PILOT';
     const cleanTime = Number(time.toFixed(3));
     const now = Date.now();
+
+    // 若未绑定 KV，向前端回传当前成绩，前端本地自动持久化保证玩家可见
+    if (!hasKv) {
+      return Response.json({
+        rank: 1,
+        total: 1,
+        isNewBest: true,
+        items: [{ name: cleanName, time: cleanTime, date: now }],
+        kvBound: false,
+        warning: 'GAME_KV 未绑定，成绩已由前端本地可靠存储。绑定 KV 后将自动同步至全网。'
+      }, { headers: corsHeaders });
+    }
 
     let list = [];
     try {
@@ -116,7 +121,8 @@ async function handleLeaderboardRequest(request, env) {
       rank: myRank,
       total: list.length,
       isNewBest,
-      items: list.slice(0, 1000)
+      items: list.slice(0, 1000),
+      kvBound: true
     }, { headers: corsHeaders });
   }
 

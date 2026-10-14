@@ -1,26 +1,27 @@
 /**
  * Leaderboard.js - 全服极速榜 TOP 1000 客户端管理器
  * 支持：
- * 1. 领航员代号（Nickname）本地持久化与修改；
- * 2. 自动提交用时与全服实时名次计算；
- * 3. TOP 1000 极速榜弹窗渲染与搜索筛选；
- * 4. 优雅的网络离线/本地回退保障。
+ * 1. 领航员代号（Nickname）本地可靠持久化与实时同步；
+ * 2. 离线/未绑定 KV 时本地优先渲染，保证留名后 100% 立即可见；
+ * 3. 云端 KV 绑定后全网跨玩家自动互通；
+ * 4. TOP 1000 极速榜弹窗渲染与搜索筛选。
  */
 
 export class LeaderboardManager {
   constructor() {
     this.STORAGE_KEY_PILOT = 'doppler_pilot_name';
     this.STORAGE_KEY_CACHE = 'doppler_leaderboard_cache';
-    this.STORAGE_KEY_BEST = 'doppler_pilot_best_time';
 
     this.apiUrl = window.LEADERBOARD_API_URL || '/api/leaderboard';
     this.cachedList = this.loadLocalCache();
+    this.isKvConnected = false;
 
     this.modalEl = null;
     this.listBodyEl = null;
     this.searchEl = null;
     this.countEl = null;
     this.statusEl = null;
+    this.cloudTagEl = null;
 
     this.initDOM();
   }
@@ -53,7 +54,10 @@ export class LeaderboardManager {
   loadLocalCache() {
     try {
       const data = localStorage.getItem(this.STORAGE_KEY_CACHE);
-      if (data) return JSON.parse(data);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
     } catch {
       // ignore
     }
@@ -96,61 +100,12 @@ export class LeaderboardManager {
     return `${y}-${m}-${d} ${hh}:${mm}`;
   }
 
-  // 拉取全服排行榜 (默认取前 1000 条)
-  async fetchTopScores(limit = 1000) {
-    try {
-      const resp = await fetch(`${this.apiUrl}?limit=${limit}`, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' }
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        const items = data.items || [];
-        if (items.length > 0) {
-          this.cachedList = items;
-          this.saveLocalCache(items);
-        }
-        return { total: data.total || items.length, items };
-      }
-    } catch (err) {
-      console.warn('[Leaderboard] Network request failed, using cached list:', err);
-    }
-    return { total: this.cachedList.length, items: this.cachedList };
-  }
-
-  // 提交通关成绩
-  async submitScore(name, clearTime) {
-    const cleanName = this.setPilotName(name);
-    const cleanTime = Number(Number(clearTime).toFixed(3));
-
-    try {
-      const resp = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: cleanName, time: cleanTime })
-      });
-
-      if (resp.ok) {
-        const res = await resp.json();
-        if (res.items && res.items.length > 0) {
-          this.cachedList = res.items;
-          this.saveLocalCache(res.items);
-        }
-        return {
-          rank: res.rank || 1,
-          total: res.total || this.cachedList.length,
-          isNewBest: Boolean(res.isNewBest),
-          items: res.items || this.cachedList
-        };
-      }
-    } catch (err) {
-      console.warn('[Leaderboard] Submit network error, updating local simulation:', err);
-    }
-
-    // 离线/开发环境本地模拟更新
+  // 本地录入一条成绩，确保玩家在任何网络环境下留名后立即可见
+  recordLocally(cleanName, cleanTime) {
     const now = Date.now();
     const existing = this.cachedList.find(r => r.name.toLowerCase() === cleanName.toLowerCase());
     let isNewBest = false;
+
     if (existing) {
       if (cleanTime < existing.time) {
         existing.time = cleanTime;
@@ -161,14 +116,88 @@ export class LeaderboardManager {
       this.cachedList.push({ name: cleanName, time: cleanTime, date: now });
       isNewBest = true;
     }
+
     this.cachedList.sort((a, b) => a.time - b.time || a.date - b.date);
     const rank = this.cachedList.findIndex(r => r.name.toLowerCase() === cleanName.toLowerCase()) + 1;
     this.saveLocalCache(this.cachedList);
 
+    return { rank, isNewBest };
+  }
+
+  // 拉取全服排行榜 (默认取前 1000 条)
+  async fetchTopScores(limit = 1000) {
+    try {
+      const resp = await fetch(`${this.apiUrl}?limit=${limit}`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        this.isKvConnected = data.kvBound === true;
+
+        const cloudItems = data.items || [];
+        if (this.isKvConnected && cloudItems.length > 0) {
+          // 将当前玩家本地成绩安全合入云端榜单
+          const myName = this.getPilotName();
+          if (myName) {
+            const localMine = this.cachedList.find(r => r.name.toLowerCase() === myName.toLowerCase());
+            if (localMine && !cloudItems.some(r => r.name.toLowerCase() === myName.toLowerCase())) {
+              cloudItems.push(localMine);
+              cloudItems.sort((a, b) => a.time - b.time || a.date - b.date);
+            }
+          }
+          this.cachedList = cloudItems;
+          this.saveLocalCache(cloudItems);
+          return { total: cloudItems.length, items: cloudItems };
+        }
+      }
+    } catch (err) {
+      console.warn('[Leaderboard] Network request failed, using cached list:', err);
+    }
+
+    // 若云端 KV 尚未绑定或网络请求失败，绝不返回空数组，使用本地可靠记录
+    return { total: this.cachedList.length, items: this.cachedList };
+  }
+
+  // 提交通关成绩
+  async submitScore(name, clearTime) {
+    const cleanName = this.setPilotName(name);
+    const cleanTime = Number(Number(clearTime).toFixed(3));
+
+    // 1. 本地存储立即持久化写入，保证 100% 可见
+    const localRes = this.recordLocally(cleanName, cleanTime);
+
+    // 2. 尝试向云端提交同步
+    try {
+      const resp = await fetch(this.apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: cleanName, time: cleanTime })
+      });
+
+      if (resp.ok) {
+        const res = await resp.json();
+        this.isKvConnected = res.kvBound === true;
+
+        if (this.isKvConnected && res.items && res.items.length > 0) {
+          this.cachedList = res.items;
+          this.saveLocalCache(res.items);
+          return {
+            rank: res.rank || localRes.rank,
+            total: res.total || this.cachedList.length,
+            isNewBest: res.isNewBest !== undefined ? Boolean(res.isNewBest) : localRes.isNewBest,
+            items: res.items
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('[Leaderboard] Cloud sync failed, local record active:', err);
+    }
+
     return {
-      rank,
+      rank: localRes.rank,
       total: this.cachedList.length,
-      isNewBest,
+      isNewBest: localRes.isNewBest,
       items: this.cachedList
     };
   }
@@ -181,6 +210,7 @@ export class LeaderboardManager {
       this.searchEl = document.getElementById('lb-search-input');
       this.countEl = document.getElementById('lb-total-count');
       this.statusEl = document.getElementById('lb-pilot-status');
+      this.cloudTagEl = document.getElementById('lb-cloud-tag');
       return;
     }
 
@@ -195,7 +225,10 @@ export class LeaderboardManager {
           <div class="lb-title-box">
             <span class="lb-icon">🏆</span>
             <div>
-              <h2 class="lb-title">全服极速挑战榜 // TOP 1000</h2>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <h2 class="lb-title">全服极速挑战榜 // TOP 1000</h2>
+                <span class="lb-cloud-tag" id="lb-cloud-tag">云端同步中...</span>
+              </div>
               <div class="lb-subtitle" id="lb-total-count">已收录 -- 位领航员</div>
             </div>
           </div>
@@ -231,7 +264,7 @@ export class LeaderboardManager {
         </div>
 
         <div class="lb-footer">
-          <div class="lb-footer-tip">按用时升序排行 // 相同用时先达成者在前</div>
+          <div class="lb-footer-tip" id="lb-footer-tip">按用时升序排行 // 相同用时先达成者在前</div>
           <button class="action-btn lb-bottom-close" id="lb-bottom-close">返回游戏 [ESC]</button>
         </div>
       </div>
@@ -244,6 +277,7 @@ export class LeaderboardManager {
     this.searchEl = modal.querySelector('#lb-search-input');
     this.countEl = modal.querySelector('#lb-total-count');
     this.statusEl = modal.querySelector('#lb-pilot-name-display');
+    this.cloudTagEl = modal.querySelector('#lb-cloud-tag');
 
     // 事件绑定
     modal.querySelector('#lb-close-btn').addEventListener('click', (e) => {
@@ -273,6 +307,20 @@ export class LeaderboardManager {
     modal.querySelector('#lb-edit-pilot-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       this.promptChangePilotName();
+    });
+
+    // 点击云端状态标签弹出指引
+    this.cloudTagEl.addEventListener('click', () => {
+      if (!this.isKvConnected) {
+        alert(
+          '【全网互通排行榜提示】\n\n' +
+          '你登记的成绩已安全保存在本地，排行榜随时可见！\n\n' +
+          '若要启用跨设备、全服全球互通：\n' +
+          '1. 在 Cloudflare 控制台 Workers & Pages -> KV 创建命名空间 doppler-kv；\n' +
+          '2. 进入 Pages 项目 doppler-axe -> 设置 -> 函数 -> KV 命名空间绑定；\n' +
+          '3. 变量名称填 GAME_KV，保存即可全网互通！'
+        );
+      }
     });
   }
 
@@ -304,13 +352,26 @@ export class LeaderboardManager {
 
   // 刷新榜单数据
   async refreshBoard() {
-    if (this.listBodyEl) {
-      this.listBodyEl.innerHTML = `<tr><td colspan="4" class="lb-loading">⚡ 正在拉取全服 TOP 1000 极速榜...</td></tr>`;
-    }
+    // 立即渲染本地已有数据，绝不让用户看到空白
+    this.renderTable(this.cachedList, this.searchEl ? this.searchEl.value.trim() : '');
+
     const { total, items } = await this.fetchTopScores(1000);
     if (this.countEl) {
       this.countEl.textContent = `全服共收录 ${total} 位顶级飞行员`;
     }
+
+    if (this.cloudTagEl) {
+      if (this.isKvConnected) {
+        this.cloudTagEl.className = 'lb-cloud-tag connected';
+        this.cloudTagEl.textContent = '● 全网云端互通';
+        this.cloudTagEl.title = 'Cloudflare KV 已连接，全球实时同步';
+      } else {
+        this.cloudTagEl.className = 'lb-cloud-tag pending';
+        this.cloudTagEl.textContent = '● 本地记录已保存 (点击看云端绑定)';
+        this.cloudTagEl.title = '点击查看如何在 Cloudflare 后台开启全网互通';
+      }
+    }
+
     this.renderTable(items, this.searchEl ? this.searchEl.value.trim() : '');
   }
 
@@ -331,8 +392,7 @@ export class LeaderboardManager {
     }
 
     let rowsHtml = '';
-    filtered.forEach((item, index) => {
-      // 如果经过搜索过滤，排名用它在总表中的真实排名
+    filtered.forEach((item) => {
       const realRank = list.indexOf(item) + 1;
       const isMe = Boolean(myName && item.name.toLowerCase() === myName);
 
