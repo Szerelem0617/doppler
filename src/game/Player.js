@@ -293,23 +293,10 @@ export class Player {
     const startX = this.x;
     const startY = this.y;
 
-    // 瞬移方向：优先移动方向，若静止且敌方有护盾则直接折跃至敌方护盾内侧 (诱骗弹簧拳借力破盾核心机制)
+    // 瞬移方向：优先移动方向，若静止则沿战机朝向向前折跃
     let dirX = move.x;
     let dirY = move.y;
     if (dirX === 0 && dirY === 0) {
-      if (this.enemy && this.enemy.shield && !this.enemy.shield.isBroken) {
-        this.x = this.enemy.x;
-        this.y = this.enemy.y + Math.max(24, this.enemy.shield.radius * 0.45);
-        this.isInsideShield = true; // 瞬移进入护盾内部
-        this.afterimages.push({
-          x: (startX + this.x) / 2,
-          y: (startY + this.y) / 2,
-          angle: this.angle,
-          alpha: 0.6,
-          color: '#00f0ff'
-        });
-        return;
-      }
       dirX = Math.cos(this.angle);
       dirY = Math.sin(this.angle);
     }
@@ -472,6 +459,7 @@ export class Player {
     this.y = y;
     this.vx = 0;
     this.vy = 0;
+    this.angle = -Math.PI / 2;
     this.hp = this.maxHp;
     this.isDead = false;
     this.invincibleTimer = 0;

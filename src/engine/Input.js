@@ -23,6 +23,14 @@ export class InputManager {
     }
   }
 
+  reset() {
+    this.keys = {};
+    this.isShooting = false;
+    this.skill1Triggered = false;
+    this.movementRestricted = false;
+    this.onMovementRestrictedAttempt = null;
+  }
+
   initEvents() {
     window.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;

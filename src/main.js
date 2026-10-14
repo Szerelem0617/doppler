@@ -182,6 +182,7 @@ let isTimeFrozen = false;
 let hasShownFreezePrompt = false;
 let lastTime = 0;
 let speedrunSeconds = 0;
+let overlayOpenTime = 0;
 // 逻辑与显示解耦：严格恒定 60Hz 确定性物理逻辑步长 (16.6667ms)
 export const FIXED_DT = 1 / 60;
 let physicsAccumulator = 0;
@@ -352,7 +353,25 @@ function initGame() {
   });
 
   // 开始按钮与返回大厅按钮响应
-  startBtn.addEventListener('click', handleStartBtnClick);
+  function tryAdvanceOverlay() {
+    if (overlay.style.display !== 'none' && !overlay.classList.contains('hidden')) {
+      if (Date.now() - overlayOpenTime < 150) return;
+      handleStartBtnClick();
+    }
+  }
+
+  // 开始按钮与遮罩点击事件
+  startBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    handleStartBtnClick();
+  });
+  overlay.addEventListener('click', () => {
+    tryAdvanceOverlay();
+  });
+  canvas.addEventListener('click', () => {
+    tryAdvanceOverlay();
+  });
+
   hubBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     openMissionHub();
@@ -384,9 +403,10 @@ function initGame() {
     // 处于大厅状态不触发键盘直接开战
     if (isHubOpen) return;
 
-    // 关卡准备中按 Enter 也可以直接开战
-    if (!isRunning && (e.code === 'Enter' || e.code === 'NumpadEnter')) {
-      handleStartBtnClick();
+    // 关卡准备/结算遮罩期间按任意键直接进入下一关/开战/重开
+    if (!isRunning && overlay.style.display !== 'none' && !overlay.classList.contains('hidden')) {
+      tryAdvanceOverlay();
+      return;
     }
   });
 
@@ -439,6 +459,7 @@ function initGame() {
     overlayTitle.textContent = 'STAGE 1';
     overlayDesc.innerHTML = '';
     startBtn.textContent = 'START';
+    overlayOpenTime = Date.now();
     overlay.style.display = 'flex';
     overlay.classList.remove('hidden');
   } else {
@@ -506,6 +527,7 @@ function switchStage(stg, showOverlay = false) {
       <span style="color:#ffaa00">【战斗须知】</span> 全自动火控系统已就绪，按 <strong>[J]</strong> 键折跃闪现调整站位，按 <strong>[K]</strong> 键开启反射力场抵御弹幕！
     `;
     startBtn.textContent = '开始挑战 [CLICK TO START]';
+    overlayOpenTime = Date.now();
     overlay.style.display = 'flex';
     overlay.classList.remove('hidden');
   } else {
@@ -556,7 +578,6 @@ function initStage(stg) {
   } else {
     player.setEnemy(enemyTarget);
     player.reset(enemyX, playerStartY);
-    player.heal(3);
   }
 
   freqMeter.reset();
@@ -593,9 +614,9 @@ function startGame() {
     hideMovementLockedToast();
   }
 
+  input.reset();
   enemyTarget.reset();
   player.reset(VIRTUAL_WIDTH / 2, playerStartY);
-  player.heal(3);
 
   freqMeter.reset();
   physicsTime = 0;
@@ -632,6 +653,11 @@ function showVictory() {
   const isTouring = tas && tas.handleVictory(timeStr);
   if (tasRunBtn) tasRunBtn.classList.remove('active');
 
+  // 重置战机至初始底端位置并清空按键状态，禁止继承上一关残余位置与按键
+  player.reset(VIRTUAL_WIDTH / 2, 710);
+  input.reset();
+  overlayOpenTime = Date.now();
+
   if (IS_PROD_MODE) {
     overlayBadge.style.display = 'none';
     overlayBadge.textContent = '';
@@ -639,13 +665,13 @@ function showVictory() {
       nextStageTarget = '2-boss';
       overlayTitle.textContent = 'STAGE 1 CLEARED';
       overlayDesc.innerHTML = `<div style="font-size:20px; font-weight:700; color:#00ff88; letter-spacing:1px; margin-bottom:12px;">TIME: ${timeStr}</div>`;
-      startBtn.textContent = '进入下一关';
+      startBtn.textContent = '按任意键进入下一关';
     } else {
       // 第二关通关后从第一关重新开始
       nextStageTarget = '1';
       overlayTitle.textContent = 'STAGE 2 CLEARED';
       overlayDesc.innerHTML = `<div style="font-size:20px; font-weight:700; color:#00ff88; letter-spacing:1px; margin-bottom:12px;">TIME: ${timeStr}</div>`;
-      startBtn.textContent = '重新开始';
+      startBtn.textContent = '按任意键重新开始';
     }
   } else {
     // 开发模式下的测试流转
@@ -709,6 +735,10 @@ function showGameOver() {
   if (tasRunBtn) tasRunBtn.classList.remove('active');
   if (tasRunAllBtn) tasRunAllBtn.classList.remove('active');
 
+  player.reset(VIRTUAL_WIDTH / 2, 710);
+  input.reset();
+  overlayOpenTime = Date.now();
+
   if (IS_PROD_MODE) {
     // 生产模式下：第二关失败后从第一关重新开始，第一关失败也是重新开始第一关
     nextStageTarget = '1';
@@ -716,14 +746,14 @@ function showGameOver() {
     overlayBadge.textContent = '';
     overlayTitle.textContent = 'GAME OVER';
     overlayDesc.innerHTML = '';
-    startBtn.textContent = '重新开始';
+    startBtn.textContent = '按任意键重新开始';
   } else {
     nextStageTarget = null;
     overlayBadge.style.display = 'none';
     overlayBadge.textContent = '';
     overlayTitle.textContent = 'GAME OVER';
     overlayDesc.innerHTML = '';
-    startBtn.textContent = '重新开始';
+    startBtn.textContent = '按任意键重新开始';
   }
 
   overlay.style.display = 'flex';
@@ -750,10 +780,9 @@ function handleCollisions(now) {
     return;
   }
 
-  // 破盾事件即时响应 (击碎最后一处弱点瞬时回血并解除移动限制)
+  // 破盾事件即时响应 (解除第一关移动限制并提示时停，无任何回血机制)
   if (enemyTarget.shield.justBroken) {
     enemyTarget.shield.justBroken = false;
-    player.heal(1);
     updatePlayerHpUI();
 
     if (input.movementRestricted) {
