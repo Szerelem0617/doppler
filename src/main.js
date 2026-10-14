@@ -5,6 +5,7 @@ import { Enemy } from './game/Enemy.js';
 import { Boss } from './game/Boss.js';
 import { Player } from './game/Player.js';
 import { TASEngine } from './tas/index.js';
+import { leaderboard } from './game/Leaderboard.js';
 
 // DOM 元素引用
 const canvas = document.getElementById('game-canvas');
@@ -58,6 +59,15 @@ const overlayDesc = document.getElementById('overlay-desc');
 const overlayBadge = document.getElementById('overlay-badge');
 const startBtn = document.getElementById('start-btn');
 const hubBtn = document.getElementById('hub-btn');
+
+// 全服极速榜 HUD 按钮
+const hudLeaderboardBtn = document.getElementById('hud-leaderboard-btn');
+if (hudLeaderboardBtn) {
+  hudLeaderboardBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    leaderboard.openModal();
+  });
+}
 
 // 生产版本与开发调试模式判定
 // 端口 5174 或 URL 带 ?dev 时激活完整开发调试版本（全景选关大厅与 TAS 面板）；
@@ -354,6 +364,14 @@ function initGame() {
 
   // 开始按钮与返回大厅按钮响应
   function tryAdvanceOverlay() {
+    // 若排行榜弹窗正处于打开状态，阻止推进
+    if (leaderboard.isModalOpen()) return;
+
+    // 若当前正在输入领航员代号，阻止推进
+    const nameInput = document.getElementById('pilot-name-input');
+    if (nameInput && document.activeElement === nameInput) return;
+    if (nameInput && !leaderboard.hasPilotName()) return;
+
     if (overlay.style.display !== 'none' && !overlay.classList.contains('hidden')) {
       if (Date.now() - overlayOpenTime < 150) return;
       handleStartBtnClick();
@@ -365,7 +383,14 @@ function initGame() {
     e.stopPropagation();
     handleStartBtnClick();
   });
-  overlay.addEventListener('click', () => {
+  overlay.addEventListener('click', (e) => {
+    // 阻止交互类子元素点击事件触发关卡推进
+    if (e.target.closest('#pilot-name-input') || 
+        e.target.closest('#pilot-name-submit') || 
+        e.target.closest('#view-leaderboard-btn') ||
+        e.target.closest('#change-pilot-name-btn')) {
+      return;
+    }
     tryAdvanceOverlay();
   });
   canvas.addEventListener('click', () => {
@@ -387,6 +412,31 @@ function initGame() {
 
   // 键盘事件全局监听
   window.addEventListener('keydown', (e) => {
+    // 若排行榜弹窗处于打开状态：按 Escape 关闭排行榜，按其他键不推进游戏
+    if (leaderboard.isModalOpen()) {
+      if (e.code === 'Escape') {
+        leaderboard.closeModal();
+      }
+      return;
+    }
+
+    // 若正在输入代号，按 Enter 触发提交代号，阻止推进游戏
+    const activeEl = document.activeElement;
+    if (activeEl && activeEl.tagName === 'INPUT') {
+      if (activeEl.id === 'pilot-name-input' && e.code === 'Enter') {
+        e.preventDefault();
+        const submitBtn = document.getElementById('pilot-name-submit');
+        if (submitBtn) submitBtn.click();
+      }
+      return;
+    }
+
+    // 若需要录入昵称但尚未录入，按键不直接跳过
+    const nameInput = document.getElementById('pilot-name-input');
+    if (nameInput && !leaderboard.hasPilotName()) {
+      return;
+    }
+
     // 按 Escape 随时返回选拔大厅 (仅开发调试模式可用)
     if (!IS_PROD_MODE && e.code === 'Escape') {
       openMissionHub();
@@ -658,6 +708,125 @@ function showVictory() {
   input.reset();
   overlayOpenTime = Date.now();
 
+  // 第二关通关排行榜结算与昵称登榜渲染
+  function renderStage2Leaderboard(timeStrVal, clearSecs) {
+    const savedPilot = leaderboard.getPilotName();
+
+    const bindButtons = () => {
+      const viewBtn = document.getElementById('view-leaderboard-btn');
+      if (viewBtn) {
+        viewBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          leaderboard.openModal();
+        });
+      }
+      const changeBtn = document.getElementById('change-pilot-name-btn');
+      if (changeBtn) {
+        changeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          leaderboard.promptChangePilotName();
+          const pilotNameEl = document.querySelector('.pilot-badge-row .pilot-name');
+          if (pilotNameEl) pilotNameEl.textContent = leaderboard.getPilotName();
+        });
+      }
+    };
+
+    if (!savedPilot) {
+      // 第一次通关：引导玩家输入领航员代号
+      startBtn.style.display = 'none';
+      overlayDesc.innerHTML = `
+        <div style="font-size:22px; font-weight:800; color:#00ff88; letter-spacing:1px; margin-bottom:12px;">TIME: ${timeStrVal}</div>
+        <div class="leaderboard-register-box" id="lb-register-box">
+          <div class="register-prompt">🏆 首次击溃终极泰坦！请输入你的领航员代号载入全服极速榜：</div>
+          <div class="register-input-row">
+            <input type="text" id="pilot-name-input" class="pilot-name-input" maxlength="16" placeholder="输入代号 (如 Maverick)" autocomplete="off" />
+            <button id="pilot-name-submit" class="register-submit-btn">确认登榜 ↵</button>
+          </div>
+          <div class="register-tip">首次录入后，后续通关将自动同步更新您的全服排名与最佳纪录</div>
+        </div>
+        <div id="lb-slot"></div>
+      `;
+
+      const inputEl = document.getElementById('pilot-name-input');
+      const submitBtn = document.getElementById('pilot-name-submit');
+      const slotEl = document.getElementById('lb-slot');
+      const regBox = document.getElementById('lb-register-box');
+
+      setTimeout(() => { if (inputEl) inputEl.focus(); }, 150);
+
+      const doSubmit = async () => {
+        const val = (inputEl.value || '').trim();
+        if (!val) {
+          inputEl.style.borderColor = '#ff2a6d';
+          return;
+        }
+        submitBtn.disabled = true;
+        submitBtn.textContent = '登榜中...';
+        const res = await leaderboard.submitScore(val, clearSecs);
+        
+        regBox.style.display = 'none';
+        slotEl.innerHTML = `
+          <div class="pilot-badge-row">
+            <span class="pilot-label">PILOT:</span>
+            <span class="pilot-name">${leaderboard.escapeHtml(val)}</span>
+            <button id="change-pilot-name-btn" class="change-name-btn" title="更换代号">✎ 更换</button>
+          </div>
+          <div class="rank-banner">
+            <span class="rank-tag">全服实时排名</span>
+            <span class="rank-number">#${res.rank}</span>
+            <span class="new-best-tag">🏆 成功入榜</span>
+          </div>
+          <div>
+            <button id="view-leaderboard-btn" class="view-board-btn">🏆 查看全服 TOP 1000 极速榜</button>
+          </div>
+        `;
+
+        bindButtons();
+        startBtn.style.display = '';
+        startBtn.textContent = '按任意键重新开始';
+        overlayOpenTime = Date.now();
+      };
+
+      submitBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        doSubmit();
+      });
+    } else {
+      // 之后通关：自动更新记录
+      startBtn.style.display = '';
+      startBtn.textContent = '按任意键重新开始';
+
+      overlayDesc.innerHTML = `
+        <div style="font-size:22px; font-weight:800; color:#00ff88; letter-spacing:1px; margin-bottom:12px;">TIME: ${timeStrVal}</div>
+        <div class="pilot-badge-row">
+          <span class="pilot-label">PILOT:</span>
+          <span class="pilot-name">${leaderboard.escapeHtml(savedPilot)}</span>
+          <button id="change-pilot-name-btn" class="change-name-btn" title="更换代号">✎ 更换</button>
+        </div>
+        <div id="lb-slot" style="margin: 8px 0 14px 0;">
+          <span style="color:#00f0ff; font-size:14px;">⚡ 正在自动同步全服 TOP 1000 榜单...</span>
+        </div>
+        <div>
+          <button id="view-leaderboard-btn" class="view-board-btn">🏆 查看全服 TOP 1000 极速榜</button>
+        </div>
+      `;
+
+      bindButtons();
+
+      leaderboard.submitScore(savedPilot, clearSecs).then((res) => {
+        const slotEl = document.getElementById('lb-slot');
+        if (!slotEl) return;
+        slotEl.innerHTML = `
+          <div class="rank-banner">
+            <span class="rank-tag">全服实时排名</span>
+            <span class="rank-number">#${res.rank}</span>
+            ${res.isNewBest ? '<span class="new-best-tag">✨ 个人新纪录！</span>' : '<span style="color:#8899aa; font-size:12px;">(已自动更新)</span>'}
+          </div>
+        `;
+      });
+    }
+  }
+
   if (IS_PROD_MODE) {
     overlayBadge.style.display = 'none';
     overlayBadge.textContent = '';
@@ -665,13 +834,13 @@ function showVictory() {
       nextStageTarget = '2-boss';
       overlayTitle.textContent = 'STAGE 1 CLEARED';
       overlayDesc.innerHTML = `<div style="font-size:20px; font-weight:700; color:#00ff88; letter-spacing:1px; margin-bottom:12px;">TIME: ${timeStr}</div>`;
+      startBtn.style.display = '';
       startBtn.textContent = '按任意键进入下一关';
     } else {
       // 第二关通关后从第一关重新开始
       nextStageTarget = '1';
       overlayTitle.textContent = 'STAGE 2 CLEARED';
-      overlayDesc.innerHTML = `<div style="font-size:20px; font-weight:700; color:#00ff88; letter-spacing:1px; margin-bottom:12px;">TIME: ${timeStr}</div>`;
-      startBtn.textContent = '按任意键重新开始';
+      renderStage2Leaderboard(timeStr, speedrunSeconds);
     }
   } else {
     // 开发模式下的测试流转
@@ -701,14 +870,11 @@ function showVictory() {
         你已成功掌握该阶段破盾机制。<br/>
         点击下方按钮直接挺进 <strong>${next.toUpperCase()}</strong>！
       `;
+      startBtn.style.display = '';
       startBtn.textContent = `进入下一测试关 ${next.toUpperCase()} [CLICK]`;
     } else {
-      overlayDesc.innerHTML = `
-        <strong>五阶段终极泰坦决战全部通关！</strong><br/><br/>
-        总挑战耗时：<strong style="color:#00ff88;font-size:20px;">${timeStr}</strong><br/>
-        恭喜完整击破 [7 → 5 → 8 → 4 → 9] 全部多普勒护盾阶段，成为真正的多普勒王牌飞行员！
-      `;
-      startBtn.textContent = '返回战术大厅 [CLICK]';
+      // 终极泰坦通关
+      renderStage2Leaderboard(timeStr, speedrunSeconds);
       nextStageTarget = null;
     }
   }
