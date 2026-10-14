@@ -56,16 +56,17 @@ export class LeaderboardManager {
       const data = localStorage.getItem(this.STORAGE_KEY_CACHE);
       if (data) {
         const parsed = JSON.parse(data);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          // 清除早期调试版本注入的模拟数据，确保只展示真实飞行员记录
+          const realOnly = parsed.filter(item => item && !['HyperNova', 'PhantomBlade', 'AeroZero'].includes(item.name));
+          this.saveLocalCache(realOnly);
+          return realOnly;
+        }
       }
     } catch {
       // ignore
     }
-    return [
-      { name: 'HyperNova', time: 13.820, date: Date.now() - 86400000 * 2 },
-      { name: 'PhantomBlade', time: 15.410, date: Date.now() - 86400000 },
-      { name: 'AeroZero', time: 17.650, date: Date.now() - 3600000 * 5 }
-    ];
+    return [];
   }
 
   saveLocalCache(list) {
@@ -387,7 +388,9 @@ export class LeaderboardManager {
       : list;
 
     if (filtered.length === 0) {
-      this.listBodyEl.innerHTML = `<tr><td colspan="4" class="lb-empty">未找到匹配的领航员记录</td></tr>`;
+      this.listBodyEl.innerHTML = query
+        ? `<tr><td colspan="4" class="lb-empty">未找到匹配的领航员代号</td></tr>`
+        : `<tr><td colspan="4" class="lb-empty">🚀 暂无全服领航员登榜记录，击破第二关终极泰坦抢占首登！</td></tr>`;
       return;
     }
 

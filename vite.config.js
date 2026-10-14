@@ -1,10 +1,6 @@
 import { defineConfig } from 'vite';
 
-let devLeaderboard = [
-  { name: 'HyperNova', time: 13.820, date: Date.now() - 86400000 * 2 },
-  { name: 'PhantomBlade', time: 15.410, date: Date.now() - 86400000 },
-  { name: 'AeroZero', time: 17.650, date: Date.now() - 3600000 * 5 }
-];
+let devLeaderboard = [];
 
 export default defineConfig({
   server: {
