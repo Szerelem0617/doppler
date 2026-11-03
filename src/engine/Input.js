@@ -9,6 +9,9 @@ export class InputManager {
     // 技能触发标记 (单次按下触发)
     this.skill1Triggered = false; // J: 折跃闪现
 
+    // 虚拟摇杆输入矢量
+    this.joystickVector = { x: 0, y: 0 };
+
     // 移动限制状态与拦截回调 (第一关破盾前限制)
     this.movementRestricted = false;
     this.onMovementRestrictedAttempt = null;
@@ -23,8 +26,32 @@ export class InputManager {
     }
   }
 
+  setJoystickVector(x, y) {
+    if (this.movementRestricted) {
+      if ((Math.abs(x) > 0.05 || Math.abs(y) > 0.05) && this.onMovementRestrictedAttempt) {
+        this.onMovementRestrictedAttempt();
+      }
+      this.joystickVector.x = 0;
+      this.joystickVector.y = 0;
+      return;
+    }
+    this.joystickVector.x = x;
+    this.joystickVector.y = y;
+  }
+
+  triggerBlink() {
+    if (this.movementRestricted) {
+      if (this.onMovementRestrictedAttempt) {
+        this.onMovementRestrictedAttempt();
+      }
+      return;
+    }
+    this.skill1Triggered = true;
+  }
+
   reset() {
     this.keys = {};
+    this.joystickVector = { x: 0, y: 0 };
     this.isShooting = false;
     this.skill1Triggered = false;
     this.movementRestricted = false;
@@ -74,7 +101,7 @@ export class InputManager {
     });
   }
 
-  // 获取离散 8 向移动矢量 (精确归一化)
+  // 获取移动矢量 (支持键盘 8 向与手机虚拟摇杆无级/8向平滑移动)
   getMovementVector() {
     let dx = 0;
     let dy = 0;
@@ -85,8 +112,10 @@ export class InputManager {
       this.keys['KeyA'] || this.keys['ArrowLeft'] ||
       this.keys['KeyD'] || this.keys['ArrowRight'];
 
+    const hasJoystickMove = Math.hypot(this.joystickVector.x, this.joystickVector.y) > 0.05;
+
     if (this.movementRestricted) {
-      if (hasMoveKey && this.onMovementRestrictedAttempt) {
+      if ((hasMoveKey || hasJoystickMove) && this.onMovementRestrictedAttempt) {
         this.onMovementRestrictedAttempt();
       }
       return { x: 0, y: 0 };
@@ -97,13 +126,19 @@ export class InputManager {
     if (this.keys['KeyA'] || this.keys['ArrowLeft']) dx -= 1;
     if (this.keys['KeyD'] || this.keys['ArrowRight']) dx += 1;
 
-    // 离散 8 向处理：单向或对角线
+    // 优先键盘 8 向输入
     if (dx !== 0 && dy !== 0) {
       const invSqrt2 = 0.70710678;
       return { x: dx * invSqrt2, y: dy * invSqrt2 };
     } else if (dx !== 0 || dy !== 0) {
       return { x: dx, y: dy };
     }
+
+    // 若无键盘按键输入，读取虚拟摇杆输入
+    if (hasJoystickMove) {
+      return { x: this.joystickVector.x, y: this.joystickVector.y };
+    }
+
     return { x: 0, y: 0 };
   }
 

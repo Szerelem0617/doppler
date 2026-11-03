@@ -6,6 +6,7 @@ import { Boss } from './game/Boss.js';
 import { Player } from './game/Player.js';
 import { TASEngine } from './tas/index.js';
 import { leaderboard } from './game/Leaderboard.js';
+import { VirtualJoystick } from './engine/VirtualJoystick.js';
 
 // DOM 元素引用
 const canvas = document.getElementById('game-canvas');
@@ -59,6 +60,16 @@ const overlayDesc = document.getElementById('overlay-desc');
 const overlayBadge = document.getElementById('overlay-badge');
 const startBtn = document.getElementById('start-btn');
 const hubBtn = document.getElementById('hub-btn');
+
+// 移动端虚拟摇杆与折跃技能 DOM 引用
+const mobileControls = document.getElementById('mobile-controls');
+const mobileJoystickZone = document.getElementById('mobile-joystick-zone');
+const joystickBase = document.getElementById('joystick-base');
+const joystickKnob = document.getElementById('joystick-knob');
+const mobileBlinkBtn = document.getElementById('mobile-blink-btn');
+const blinkCdOverlay = document.getElementById('blink-cd-overlay');
+const blinkCdText = document.getElementById('blink-cd-text');
+let virtualJoystick = null;
 
 // 全服极速榜 HUD 按钮
 const hudLeaderboardBtn = document.getElementById('hud-leaderboard-btn');
@@ -210,27 +221,51 @@ function resizeCanvas() {
   const winW = window.innerWidth;
   const winH = window.innerHeight;
 
-  // 严格锁定 1:1 固定长宽比 (800x800 虚拟物理竞技场)，杜绝任何屏幕缩放导致的物理偏移
-  canvasScale = Math.min(winW / VIRTUAL_WIDTH, winH / VIRTUAL_HEIGHT);
-  const displayW = VIRTUAL_WIDTH * canvasScale;
-  const displayH = VIRTUAL_HEIGHT * canvasScale;
+  const isMobilePortrait = winW <= 900 && winW < winH;
 
-  canvasOffsetX = (winW - displayW) / 2;
-  canvasOffsetY = (winH - displayH) / 2;
+  if (isMobilePortrait) {
+    // 手机竖屏模式：自适应预留顶部仪表区与底部触控区，确保战场正中 100% 纯净零遮挡
+    const topReserve = Math.max(95, Math.min(125, winH * 0.15));
+    const bottomReserve = Math.max(140, Math.min(185, winH * 0.22));
+    const availH = Math.max(220, winH - topReserve - bottomReserve);
 
-  // 物理像素尺寸 (高清 Retina / DPR 渲染)
-  canvas.width = displayW * dpr;
-  canvas.height = displayH * dpr;
+    canvasScale = Math.min(winW / VIRTUAL_WIDTH, availH / VIRTUAL_HEIGHT);
+    const displayW = VIRTUAL_WIDTH * canvasScale;
+    const displayH = VIRTUAL_HEIGHT * canvasScale;
 
-  // CSS 布局居中
-  canvas.style.width = `${displayW}px`;
-  canvas.style.height = `${displayH}px`;
-  canvas.style.left = `${canvasOffsetX}px`;
-  canvas.style.top = `${canvasOffsetY}px`;
+    canvasOffsetX = (winW - displayW) / 2;
+    canvasOffsetY = topReserve + (availH - displayH) / 2;
+
+    canvas.width = displayW * dpr;
+    canvas.height = displayH * dpr;
+    canvas.style.width = `${displayW}px`;
+    canvas.style.height = `${displayH}px`;
+    canvas.style.left = `${canvasOffsetX}px`;
+    canvas.style.top = `${canvasOffsetY}px`;
+  } else {
+    // 宽屏/桌面端/平板横屏模式：全景居中锁定 1:1 固定长宽比
+    canvasScale = Math.min(winW / VIRTUAL_WIDTH, winH / VIRTUAL_HEIGHT);
+    const displayW = VIRTUAL_WIDTH * canvasScale;
+    const displayH = VIRTUAL_HEIGHT * canvasScale;
+
+    canvasOffsetX = (winW - displayW) / 2;
+    canvasOffsetY = (winH - displayH) / 2;
+
+    canvas.width = displayW * dpr;
+    canvas.height = displayH * dpr;
+    canvas.style.width = `${displayW}px`;
+    canvas.style.height = `${displayH}px`;
+    canvas.style.left = `${canvasOffsetX}px`;
+    canvas.style.top = `${canvasOffsetY}px`;
+  }
 
   // 统一缩放上下文：使得所有绘图与物理坐标永远保持在严格的 [0, 800] 空间内！
   ctx.resetTransform();
   ctx.scale(canvasScale * dpr, canvasScale * dpr);
+
+  if (virtualJoystick) {
+    virtualJoystick.updateCenter();
+  }
 }
 
 function initStars(count = 70) {
@@ -342,6 +377,39 @@ function initGame() {
   freqMeter = new FrequencyMeter(freqCanvas, 3.33);
   window.input = input;
   window.freqMeter = freqMeter;
+
+  // 初始化移动端虚拟摇杆
+  if (mobileJoystickZone && joystickBase && joystickKnob) {
+    virtualJoystick = new VirtualJoystick(mobileJoystickZone, joystickBase, joystickKnob, {
+      maxRadius: 42,
+      deadzone: 6,
+      onMove: (vec) => {
+        if (input) input.setJoystickVector(vec.x, vec.y);
+      },
+      onStart: () => {
+        if (isTimeFrozen) {
+          isTimeFrozen = false;
+          freezePrompt.style.display = 'none';
+        }
+      }
+    });
+  }
+
+  // 初始化移动端折跃闪现按钮
+  if (mobileBlinkBtn) {
+    const handleBlinkAction = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (isTimeFrozen) {
+        isTimeFrozen = false;
+        freezePrompt.style.display = 'none';
+      }
+      if (input) input.triggerBlink();
+    };
+
+    mobileBlinkBtn.addEventListener('touchstart', handleBlinkAction, { passive: false });
+    mobileBlinkBtn.addEventListener('mousedown', handleBlinkAction);
+  }
 
   initStars(80);
   resizeCanvas();
@@ -1115,7 +1183,7 @@ function updateHUD(now) {
     freqStatus.style.color = '#8899aa';
   }
 
-  // J 键折跃 HUD 状态
+  // J 键折跃 HUD 状态 (PC)
   if (player.blinkCdTimer > 0) {
     slotSkill1.classList.remove('active');
     skill1Status.textContent = `${player.blinkCdTimer.toFixed(1)}s`;
@@ -1124,6 +1192,24 @@ function updateHUD(now) {
     slotSkill1.classList.remove('active');
     skill1Status.textContent = 'READY';
     skill1Status.className = 'skill-status';
+  }
+
+  // 移动端折跃按钮 CD 状态更新
+  if (mobileBlinkBtn) {
+    if (player.blinkCdTimer > 0) {
+      mobileBlinkBtn.classList.add('cooling');
+      mobileBlinkBtn.classList.remove('ready');
+      if (blinkCdText) blinkCdText.textContent = `${player.blinkCdTimer.toFixed(1)}s`;
+      if (blinkCdOverlay) {
+        const pct = Math.max(0, Math.min(100, (player.blinkCdTimer / player.blinkCooldown) * 100));
+        blinkCdOverlay.style.height = `${pct}%`;
+      }
+    } else {
+      mobileBlinkBtn.classList.remove('cooling');
+      mobileBlinkBtn.classList.add('ready');
+      if (blinkCdText) blinkCdText.textContent = '';
+      if (blinkCdOverlay) blinkCdOverlay.style.height = '0%';
+    }
   }
 
   if (isRunning && !isVictory) {
@@ -1181,6 +1267,12 @@ function physicsStep(dt) {
       isTimeFrozen = false;
       freezePrompt.style.display = 'none';
     }
+  }
+
+  // 手机端推动虚拟摇杆解除时停
+  if (isTimeFrozen && input && (Math.abs(input.joystickVector.x) > 0.1 || Math.abs(input.joystickVector.y) > 0.1)) {
+    isTimeFrozen = false;
+    freezePrompt.style.display = 'none';
   }
 
   if (!isTimeFrozen) {

@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>DOPPLER STRIKE // 多普勒战机</title>
   <link rel="stylesheet" href="./src/style.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -134,7 +134,7 @@
           </div>
         </div>
 
-        <div class="freeze-text">按移动键解除时停，投入战斗</div>
+        <div class="freeze-text">按移动键或轻推摇杆解除时停，投入战斗</div>
       </div>
     </div>
 
@@ -158,6 +158,33 @@
       <div class="controls-hint" id="controls-hint">
         <span class="key-cap">W</span><span class="key-cap">A</span><span class="key-cap">S</span><span class="key-cap">D</span> 移动 &nbsp;|&nbsp;
         <span class="key-cap">J</span> 折跃
+      </div>
+    </div>
+
+    <!-- 移动端专属虚拟触控层 (Touch Controls) -->
+    <div id="mobile-controls" class="mobile-controls">
+      <!-- 虚拟摇杆区域 -->
+      <div id="mobile-joystick-zone" class="joystick-zone">
+        <div id="joystick-base" class="joystick-base">
+          <div class="joystick-ring"></div>
+          <div id="joystick-knob" class="joystick-knob">
+            <div class="knob-dot"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 移动端战术折跃闪现按钮 -->
+      <div id="mobile-actions-zone" class="actions-zone">
+        <button id="mobile-blink-btn" class="mobile-blink-btn" type="button" aria-label="折跃闪现">
+          <div class="blink-btn-inner">
+            <svg class="blink-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="blink-label">折跃</span>
+          </div>
+          <div id="blink-cd-overlay" class="blink-cd-overlay"></div>
+          <span id="blink-cd-text" class="blink-cd-text"></span>
+        </button>
       </div>
     </div>
 
