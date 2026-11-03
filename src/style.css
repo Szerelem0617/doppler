@@ -27,17 +27,22 @@
 body, html {
   width: 100%;
   height: 100%;
+  height: var(--app-height, 100vh);
   overflow: hidden;
   background-color: var(--bg-color);
   color: var(--text-primary);
   font-family: var(--font-data);
   touch-action: none;
+  position: fixed;
+  inset: 0;
 }
 
 #app {
-  position: relative;
-  width: 100vw;
-  height: 100vh;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  height: var(--app-height, 100vh);
   display: flex;
   overflow: hidden;
   touch-action: none;
@@ -1748,31 +1753,30 @@ body:not(.dev-mode) .hud-header-bar {
    ======================================================== */
 
 .mobile-controls {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  height: var(--app-height, 100vh);
   pointer-events: none;
   z-index: 40;
 }
 
-/* 虚拟摇杆触控区域 */
+/* 虚拟摇杆触控感应区域：覆盖左侧下半大范围，实现任意位置触控即唤出跟手摇杆 */
 .joystick-zone {
   position: absolute;
-  left: 14px;
-  bottom: max(16px, env(safe-area-inset-bottom));
-  width: 140px;
-  height: 140px;
+  left: 0;
+  bottom: 0;
+  width: 52vw;
+  height: calc(100% - 85px);
   pointer-events: auto;
   touch-action: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow: visible;
+  z-index: 30;
 }
 
 .joystick-base {
-  position: relative;
+  position: absolute;
   width: 116px;
   height: 116px;
   border-radius: 50%;
@@ -1784,12 +1788,17 @@ body:not(.dev-mode) .hud-header-bar {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  opacity: 0.45;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  will-change: left, top, opacity, transform;
+  transition: opacity 0.2s ease, box-shadow 0.2s ease;
 }
 
 .joystick-base.active {
-  border-color: rgba(0, 240, 255, 0.85);
-  box-shadow: 0 0 25px rgba(0, 240, 255, 0.45), inset 0 0 20px rgba(0, 240, 255, 0.2);
+  opacity: 1;
+  border-color: rgba(0, 240, 255, 0.95);
+  box-shadow: 0 0 28px rgba(0, 240, 255, 0.5), inset 0 0 20px rgba(0, 240, 255, 0.25);
 }
 
 .joystick-ring {
@@ -1814,7 +1823,6 @@ body:not(.dev-mode) .hud-header-bar {
   pointer-events: none;
   transform: translate(0px, 0px);
   will-change: transform;
-  transition: transform 0.04s linear;
 }
 
 .joystick-knob.active {
@@ -1833,9 +1841,10 @@ body:not(.dev-mode) .hud-header-bar {
 /* 移动端战术折跃闪现按钮 */
 .actions-zone {
   position: absolute;
-  right: 18px;
-  bottom: max(18px, env(safe-area-inset-bottom));
+  right: calc(max(18px, env(safe-area-inset-right, 0px)) + 4px);
+  bottom: calc(max(18px, env(safe-area-inset-bottom, 0px)) + 4px);
   pointer-events: auto;
+  z-index: 35;
 }
 
 .mobile-blink-btn {
@@ -1933,7 +1942,7 @@ body:not(.dev-mode) .hud-header-bar {
 /* ========================================================
    桌面宽屏视图：隐藏移动端专属触控
    ======================================================== */
-@media (min-width: 901px) {
+@media (min-width: 950px) and (min-height: 521px) and (hover: hover) {
   .mobile-controls {
     display: none !important;
   }
@@ -2204,19 +2213,30 @@ body:not(.dev-mode) .hud-header-bar {
 
 /* ========================================================
    移动端横屏专属优化 (LANDSCAPE)
+   覆盖移动端各种尺寸横屏（包括大屏机型 iPhone Pro Max 等）
    ======================================================== */
-@media (max-width: 900px) and (orientation: landscape) {
+@media (orientation: landscape) and (max-height: 520px), 
+       (orientation: landscape) and (max-width: 950px) {
   .hud-header-bar {
-    top: 6px;
-    left: 10px;
+    top: max(8px, env(safe-area-inset-top, 0px));
+    left: calc(max(14px, env(safe-area-inset-left, 0px)));
     width: auto;
   }
 
+  /* 横屏下将玩家 HEALTH 血槽移至左上角计时器正下方，避免遮挡画布或摇杆 */
+  .hud-bottom {
+    top: calc(max(8px, env(safe-area-inset-top, 0px)) + 46px);
+    left: calc(max(14px, env(safe-area-inset-left, 0px)));
+    bottom: auto;
+    transform: none;
+    z-index: 26;
+  }
+
   .hud-right {
-    top: 10px;
-    right: 10px;
+    top: max(8px, env(safe-area-inset-top, 0px));
+    right: calc(max(14px, env(safe-area-inset-right, 0px)));
     left: auto;
-    width: 190px;
+    width: 195px;
     flex-direction: column;
     gap: 6px;
   }
@@ -2226,37 +2246,34 @@ body:not(.dev-mode) .hud-header-bar {
     width: 100%;
   }
 
-  .hud-bottom {
-    bottom: 8px;
-    left: 20px;
-    transform: none;
-  }
-
+  /* 虚拟跟手摇杆在横屏下覆盖左半侧感应区 */
   .joystick-zone {
-    left: 20px;
-    bottom: 35px;
-    width: 110px;
-    height: 110px;
+    left: 0;
+    top: 85px;
+    bottom: 0;
+    width: 48vw;
+    height: calc(100% - 85px);
   }
 
   .joystick-base {
-    width: 94px;
-    height: 94px;
+    width: 98px;
+    height: 98px;
   }
 
   .joystick-knob {
-    width: 42px;
-    height: 42px;
+    width: 44px;
+    height: 44px;
   }
 
+  /* 战术折跃按键：确保完全处于横屏可视区域内，杜绝被底部遮挡 */
   .actions-zone {
-    right: 20px;
-    bottom: 25px;
+    right: calc(max(20px, env(safe-area-inset-right, 0px)) + 8px);
+    bottom: calc(max(18px, env(safe-area-inset-bottom, 0px)) + 12px);
   }
 
   .mobile-blink-btn {
-    width: 60px;
-    height: 60px;
+    width: 58px;
+    height: 58px;
   }
 }
 

@@ -216,12 +216,20 @@ let canvasOffsetX = 0;
 let canvasOffsetY = 0;
 let backgroundStars = [];
 
+export function updateViewportDimensions() {
+  const vh = window.innerHeight;
+  const vw = window.innerWidth;
+  document.documentElement.style.setProperty('--app-height', `${vh}px`);
+  document.documentElement.style.setProperty('--app-width', `${vw}px`);
+}
+
 function resizeCanvas() {
+  updateViewportDimensions();
   const dpr = window.devicePixelRatio || 1;
   const winW = window.innerWidth;
   const winH = window.innerHeight;
 
-  const isMobilePortrait = winW <= 900 && winW < winH;
+  const isMobilePortrait = (winW <= 900 && winW < winH) || (winW <= 1024 && winW < winH && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
 
   if (isMobilePortrait) {
     // 手机竖屏模式：自适应预留顶部仪表区与底部触控区，确保战场正中 100% 纯净零遮挡
@@ -264,7 +272,7 @@ function resizeCanvas() {
   ctx.scale(canvasScale * dpr, canvasScale * dpr);
 
   if (virtualJoystick) {
-    virtualJoystick.updateCenter();
+    virtualJoystick.resetToRestingPosition(false);
   }
 }
 
@@ -381,7 +389,7 @@ function initGame() {
   // 初始化移动端虚拟摇杆
   if (mobileJoystickZone && joystickBase && joystickKnob) {
     virtualJoystick = new VirtualJoystick(mobileJoystickZone, joystickBase, joystickKnob, {
-      maxRadius: 42,
+      maxRadius: 44,
       deadzone: 6,
       onMove: (vec) => {
         if (input) input.setJoystickVector(vec.x, vec.y);
@@ -391,8 +399,12 @@ function initGame() {
           isTimeFrozen = false;
           freezePrompt.style.display = 'none';
         }
+      },
+      onEnd: () => {
+        if (input) input.setJoystickVector(0, 0);
       }
     });
+    window.virtualJoystick = virtualJoystick;
   }
 
   // 初始化移动端折跃闪现按钮
@@ -414,6 +426,9 @@ function initGame() {
   initStars(80);
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('orientationchange', () => {
+    setTimeout(resizeCanvas, 100);
+  });
 
   // 初始化底层 Stage 1 模型（不弹窗）
   initStage('1');
