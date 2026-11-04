@@ -749,6 +749,149 @@ body, html {
   margin-top: 6px;
 }
 
+/* PC 端与移动端引导视图分流 (默认桌面视图) */
+.freeze-desktop-guide {
+  display: flex;
+}
+
+.freeze-desktop-tip {
+  display: block;
+}
+
+.freeze-mobile-guide {
+  display: none;
+}
+
+.freeze-mobile-tip {
+  display: none;
+}
+
+/* 移动端专属纯摇杆/按钮图示卡片 */
+.freeze-mobile-guide {
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  width: 100%;
+  margin: 4px 0;
+}
+
+.freeze-mobile-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.freeze-illu-box {
+  width: 66px;
+  height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  position: relative;
+}
+
+/* 虚拟摇杆图示 */
+.illu-joystick-ring {
+  position: relative;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: 1.5px dashed rgba(0, 240, 255, 0.5);
+  background: radial-gradient(circle, rgba(0, 240, 255, 0.08) 0%, rgba(6, 12, 24, 0.6) 80%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: joystick-illu-pulse 2s infinite ease-in-out;
+}
+
+.illu-arrow {
+  position: absolute;
+  font-size: 8px;
+  color: rgba(0, 240, 255, 0.75);
+}
+.illu-up { top: 2px; }
+.illu-down { bottom: 2px; }
+.illu-left { left: 3px; }
+.illu-right { right: 3px; }
+
+.illu-joystick-knob {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #00f0ff, #0088cc 70%, #003366 100%);
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: joystick-knob-sway 2.4s infinite ease-in-out;
+}
+
+.illu-knob-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 4px #ffffff;
+}
+
+@keyframes joystick-knob-sway {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(5px, -3px); }
+  50% { transform: translate(-4px, 4px); }
+  75% { transform: translate(4px, 5px); }
+}
+
+@keyframes joystick-illu-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(0, 240, 255, 0.2); }
+  50% { box-shadow: 0 0 18px rgba(0, 240, 255, 0.5); }
+}
+
+/* 闪现按钮图示 */
+.illu-btn-circle {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 2px solid var(--cyan-glow);
+  background: radial-gradient(circle at 40% 40%, rgba(12, 28, 50, 0.95), rgba(5, 12, 22, 0.98));
+  box-shadow: 0 0 18px rgba(0, 240, 255, 0.5), inset 0 0 12px rgba(0, 240, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: blink-illu-burst 2s infinite ease-in-out;
+}
+
+.illu-btn-icon {
+  width: 26px;
+  height: 26px;
+  color: #00f0ff;
+  filter: drop-shadow(0 0 6px #00f0ff);
+}
+
+@keyframes blink-illu-burst {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 14px rgba(0, 240, 255, 0.4); }
+  50% { transform: scale(1.06); box-shadow: 0 0 24px rgba(0, 240, 255, 0.8), 0 0 6px #ffffff; }
+}
+
+.freeze-mobile-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #fff;
+  text-shadow: 0 0 8px var(--cyan-glow);
+}
+
+.freeze-mobile-desc {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
 @keyframes freeze-fade-in {
   from { opacity: 0; transform: scale(0.96); }
   to { opacity: 1; transform: scale(1); }
@@ -1847,6 +1990,7 @@ body:not(.dev-mode) .hud-header-bar {
   z-index: 35;
 }
 
+/* 移动端战术折跃闪现按钮 (MOBA 风格) */
 .mobile-blink-btn {
   position: relative;
   width: 72px;
@@ -1864,7 +2008,7 @@ body:not(.dev-mode) .hud-header-bar {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.12s cubic-bezier(0.18, 0.89, 0.32, 1.28), box-shadow 0.12s ease;
+  transition: transform 0.12s cubic-bezier(0.18, 0.89, 0.32, 1.28), box-shadow 0.15s ease, border-color 0.2s ease;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -1879,14 +2023,117 @@ body:not(.dev-mode) .hud-header-bar {
 }
 
 .mobile-blink-btn.cooling {
-  opacity: 0.72;
-  border-color: rgba(255, 170, 0, 0.45);
-  box-shadow: 0 0 10px rgba(255, 170, 0, 0.25);
+  border-color: rgba(0, 240, 255, 0.4);
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.2), inset 0 0 10px rgba(0, 0, 0, 0.6);
+}
+
+.mobile-blink-btn.cooling .blink-icon {
+  filter: grayscale(0.85) brightness(0.55);
+  opacity: 0.55;
+  transition: filter 0.2s ease, opacity 0.2s ease;
+}
+
+.mobile-blink-btn.cooling .blink-label {
+  opacity: 0.5;
+  color: #789;
+}
+
+/* 充能完毕爆发光效 (Ready Burst) */
+.mobile-blink-btn.ready-burst {
+  animation: moba-skill-burst 0.5s ease-out forwards;
+}
+
+@keyframes moba-skill-burst {
+  0% {
+    transform: scale(0.95);
+    border-color: #ffffff;
+    box-shadow: 0 0 45px rgba(0, 240, 255, 1), 0 0 70px rgba(255, 255, 255, 0.9), inset 0 0 30px #ffffff;
+  }
+  40% {
+    transform: scale(1.1);
+    border-color: #00ffff;
+    box-shadow: 0 0 50px rgba(0, 240, 255, 0.9), 0 0 25px #ffffff;
+  }
+  100% {
+    transform: scale(1);
+    border-color: var(--cyan-glow);
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.4), inset 0 0 15px rgba(0, 240, 255, 0.15);
+  }
 }
 
 @keyframes blink-ready-glow {
   0% { box-shadow: 0 0 14px rgba(0, 240, 255, 0.35); }
   100% { box-shadow: 0 0 28px rgba(0, 240, 255, 0.75), 0 0 8px #ffffff; }
+}
+
+/* MOBA 外圈充能进度条 (Circular SVG ring) */
+.blink-charge-ring-svg {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  transform: rotate(-90deg); /* 12点钟方向开始 */
+  pointer-events: none;
+  z-index: 5;
+}
+
+.charge-ring-bg {
+  fill: none;
+  stroke: rgba(0, 240, 255, 0.12);
+  stroke-width: 2.5;
+}
+
+.charge-ring-bar {
+  fill: none;
+  stroke: var(--cyan-glow);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-dasharray: 207.35;
+  stroke-dashoffset: 207.35;
+  filter: drop-shadow(0 0 6px var(--cyan-glow));
+  transition: stroke-dashoffset 0.05s linear;
+}
+
+/* MOBA 360° 扇形顺时针扫光充能遮罩 (Radial Sector Sweep) */
+.blink-cd-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  /* 顺时针扇面：透出已充能部分，未充能部分覆盖暗影 */
+  background: conic-gradient(
+    from -90deg,
+    transparent 0deg,
+    transparent var(--cd-deg, 0deg),
+    rgba(3, 7, 16, 0.82) var(--cd-deg, 0deg),
+    rgba(3, 7, 16, 0.82) 360deg
+  );
+}
+
+/* 充能扫描指针光刃 (Radar scanline at sweep leading edge) */
+.blink-cd-sweep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  background: conic-gradient(
+    from -90deg,
+    transparent 0deg,
+    transparent calc(var(--cd-deg, 0deg) - 3.5deg),
+    rgba(0, 240, 255, 0.95) var(--cd-deg, 0deg),
+    transparent calc(var(--cd-deg, 0deg) + 0.8deg),
+    transparent 360deg
+  );
+  filter: drop-shadow(0 0 5px #00f0ff);
+}
+
+.mobile-blink-btn.cooling .blink-cd-sweep {
+  opacity: 1;
+  transition: none;
 }
 
 .blink-btn-inner {
@@ -1898,6 +2145,7 @@ body:not(.dev-mode) .hud-header-bar {
   color: #ffffff;
   z-index: 2;
   pointer-events: none;
+  transition: opacity 0.2s ease;
 }
 
 .blink-icon {
@@ -1905,6 +2153,7 @@ body:not(.dev-mode) .hud-header-bar {
   height: 24px;
   color: #00f0ff;
   filter: drop-shadow(0 0 6px #00f0ff);
+  transition: filter 0.2s ease, opacity 0.2s ease;
 }
 
 .blink-label {
@@ -1916,27 +2165,16 @@ body:not(.dev-mode) .hud-header-bar {
   text-shadow: 0 0 8px var(--cyan-glow);
 }
 
-.blink-cd-overlay {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 0%;
-  background: rgba(0, 0, 0, 0.75);
-  z-index: 1;
-  pointer-events: none;
-  transition: height 0.08s linear;
-}
-
 .blink-cd-text {
   position: absolute;
   font-family: var(--font-display);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 900;
-  color: #ffaa00;
-  text-shadow: 0 0 10px rgba(255, 170, 0, 0.9);
-  z-index: 3;
+  color: #ffffff;
+  text-shadow: 0 0 12px rgba(0, 240, 255, 0.9), 0 0 4px #000;
+  z-index: 6;
   pointer-events: none;
+  letter-spacing: 0.5px;
 }
 
 /* ========================================================
@@ -2152,11 +2390,26 @@ body:not(.dev-mode) .hud-header-bar {
     display: none !important; /* 隐藏 WASD 键盘操作提示 */
   }
 
-  /* 4. 时停引导层移动端适配 */
+  /* 4. 时停引导层移动端适配：纯摇杆与闪现按钮图示，隐藏键盘键位 */
   .freeze-prompt-content {
     width: 92%;
     max-width: 360px;
-    padding: 20px 16px;
+    padding: 22px 16px;
+  }
+
+  .freeze-desktop-guide, .freeze-desktop-tip {
+    display: none !important;
+  }
+
+  .freeze-mobile-guide {
+    display: flex !important;
+  }
+
+  .freeze-mobile-tip {
+    display: block !important;
+    font-size: 13px;
+    text-align: center;
+    line-height: 1.5;
   }
 
   .freeze-columns {

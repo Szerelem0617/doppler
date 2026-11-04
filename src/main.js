@@ -67,7 +67,8 @@ const mobileJoystickZone = document.getElementById('mobile-joystick-zone');
 const joystickBase = document.getElementById('joystick-base');
 const joystickKnob = document.getElementById('joystick-knob');
 const mobileBlinkBtn = document.getElementById('mobile-blink-btn');
-const blinkCdOverlay = document.getElementById('blink-cd-overlay');
+const blinkCdSweep = document.getElementById('blink-cd-sweep');
+const blinkChargeRingBar = document.getElementById('blink-charge-ring-bar');
 const blinkCdText = document.getElementById('blink-cd-text');
 let virtualJoystick = null;
 
@@ -732,20 +733,9 @@ function startGame() {
 
   const playerStartY = 710;
 
-  // 奇数次进入第一关在破盾前限制移动，偶数次不限制
-  if (currentStage === '1') {
-    stage1EntryCount++;
-    const isOddEntry = (stage1EntryCount % 2 === 1);
-    if (isOddEntry) {
-      input.setMovementRestricted(true, triggerMovementLockedNotice);
-    } else {
-      input.setMovementRestricted(false);
-      hideMovementLockedToast();
-    }
-  } else {
-    input.setMovementRestricted(false);
-    hideMovementLockedToast();
-  }
+  // 永久解除开局移动限制，自由操控战机
+  input.setMovementRestricted(false);
+  hideMovementLockedToast();
 
   input.reset();
   enemyTarget.reset();
@@ -1209,21 +1199,46 @@ function updateHUD(now) {
     skill1Status.className = 'skill-status';
   }
 
-  // 移动端折跃按钮 CD 状态更新
+  // 移动端折跃按钮 CD 与 MOBA 充能扫光状态更新
   if (mobileBlinkBtn) {
-    if (player.blinkCdTimer > 0) {
+    const rem = player.blinkCdTimer;
+    const maxCd = player.blinkCooldown || 5.0;
+
+    if (rem > 0) {
+      const remRatio = Math.max(0, Math.min(1, rem / maxCd));
+      const chargedRatio = 1.0 - remRatio;
+      const deg = (chargedRatio * 360).toFixed(1);
+
       mobileBlinkBtn.classList.add('cooling');
-      mobileBlinkBtn.classList.remove('ready');
-      if (blinkCdText) blinkCdText.textContent = `${player.blinkCdTimer.toFixed(1)}s`;
-      if (blinkCdOverlay) {
-        const pct = Math.max(0, Math.min(100, (player.blinkCdTimer / player.blinkCooldown) * 100));
-        blinkCdOverlay.style.height = `${pct}%`;
+      mobileBlinkBtn.classList.remove('ready', 'ready-burst');
+      mobileBlinkBtn.style.setProperty('--cd-deg', `${deg}deg`);
+
+      if (blinkCdText) {
+        blinkCdText.textContent = `${rem.toFixed(1)}s`;
+      }
+
+      if (blinkChargeRingBar) {
+        const totalLen = 207.35;
+        const offset = totalLen * (1 - chargedRatio);
+        blinkChargeRingBar.style.strokeDashoffset = `${offset.toFixed(1)}px`;
       }
     } else {
-      mobileBlinkBtn.classList.remove('cooling');
-      mobileBlinkBtn.classList.add('ready');
+      // 从 cooling 切换到 0 时触发一次 MOBA 暴风充能完毕辉光动画
+      if (mobileBlinkBtn.classList.contains('cooling')) {
+        mobileBlinkBtn.classList.remove('cooling');
+        mobileBlinkBtn.classList.add('ready', 'ready-burst');
+        setTimeout(() => {
+          mobileBlinkBtn.classList.remove('ready-burst');
+        }, 500);
+      } else {
+        mobileBlinkBtn.classList.add('ready');
+      }
+
+      mobileBlinkBtn.style.setProperty('--cd-deg', '360deg');
       if (blinkCdText) blinkCdText.textContent = '';
-      if (blinkCdOverlay) blinkCdOverlay.style.height = '0%';
+      if (blinkChargeRingBar) {
+        blinkChargeRingBar.style.strokeDashoffset = '0px';
+      }
     }
   }
 
@@ -1356,3 +1371,4 @@ initGame();
 
 window.physicsStep = physicsStep;
 window.FIXED_DT = FIXED_DT;
+window.updateHUD = updateHUD;

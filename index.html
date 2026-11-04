@@ -112,7 +112,8 @@
       <div class="freeze-prompt-content">
         <div class="freeze-badge">SYSTEM ACTIVATED // TACTICAL CONTROLS</div>
         
-        <div class="freeze-columns">
+        <!-- PC 桌面端提示 (WASD 键与 J 键) -->
+        <div class="freeze-desktop-guide freeze-columns">
           <!-- 推进移动 -->
           <div class="freeze-col">
             <div class="freeze-keys">
@@ -137,7 +138,43 @@
           </div>
         </div>
 
-        <div class="freeze-text">按移动键或轻推摇杆解除时停，投入战斗</div>
+        <!-- 移动端专属提示 (纯虚拟摇杆图标 + 折跃按钮图标) -->
+        <div class="freeze-mobile-guide">
+          <!-- 虚拟摇杆图示 -->
+          <div class="freeze-mobile-card">
+            <div class="freeze-illu-box joystick-illu">
+              <div class="illu-joystick-ring">
+                <span class="illu-arrow illu-up">▲</span>
+                <span class="illu-arrow illu-down">▼</span>
+                <span class="illu-arrow illu-left">◀</span>
+                <span class="illu-arrow illu-right">▶</span>
+                <div class="illu-joystick-knob">
+                  <span class="illu-knob-dot"></span>
+                </div>
+              </div>
+            </div>
+            <div class="freeze-mobile-title">跟手摇杆</div>
+            <div class="freeze-mobile-desc">左屏任意滑动 · 360°飞行</div>
+          </div>
+
+          <div class="freeze-divider"></div>
+
+          <!-- 闪现按钮图示 -->
+          <div class="freeze-mobile-card">
+            <div class="freeze-illu-box btn-illu">
+              <div class="illu-btn-circle">
+                <svg class="illu-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+            </div>
+            <div class="freeze-mobile-title">折跃闪现</div>
+            <div class="freeze-mobile-desc">右下点击 · 300px极速位移</div>
+          </div>
+        </div>
+
+        <div class="freeze-text freeze-desktop-tip">按 WASD 移动或 J 键折跃解除时停，投入战斗</div>
+        <div class="freeze-text freeze-mobile-tip">轻推摇杆或点击闪现解除时停，投入战斗</div>
       </div>
     </div>
 
@@ -178,14 +215,25 @@
 
       <!-- 移动端战术折跃闪现按钮 -->
       <div id="mobile-actions-zone" class="actions-zone">
-        <button id="mobile-blink-btn" class="mobile-blink-btn" type="button" aria-label="折跃闪现">
+        <button id="mobile-blink-btn" class="mobile-blink-btn ready" type="button" aria-label="折跃闪现">
+          <!-- MOBA 外圈充能进度光环 -->
+          <svg class="blink-charge-ring-svg" viewBox="0 0 72 72">
+            <circle class="charge-ring-bg" cx="36" cy="36" r="33" />
+            <circle id="blink-charge-ring-bar" class="charge-ring-bar" cx="36" cy="36" r="33" />
+          </svg>
+
+          <!-- MOBA 360° 顺时针扇形充能扫除遮罩与扫描光刃 -->
+          <div id="blink-cd-sweep" class="blink-cd-sweep"></div>
+
+          <!-- 技能核心图标与名称 -->
           <div class="blink-btn-inner">
             <svg class="blink-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <span class="blink-label">折跃</span>
           </div>
-          <div id="blink-cd-overlay" class="blink-cd-overlay"></div>
+
+          <!-- 倒计时数字 -->
           <span id="blink-cd-text" class="blink-cd-text"></span>
         </button>
       </div>

@@ -12,7 +12,7 @@ export class InputManager {
     // 虚拟摇杆输入矢量
     this.joystickVector = { x: 0, y: 0 };
 
-    // 移动限制状态与拦截回调 (第一关破盾前限制)
+    // 移动限制已完全移除 (自由全向机动)
     this.movementRestricted = false;
     this.onMovementRestrictedAttempt = null;
 
@@ -20,32 +20,17 @@ export class InputManager {
   }
 
   setMovementRestricted(restricted, onAttemptCallback = null) {
-    this.movementRestricted = restricted;
-    if (onAttemptCallback) {
-      this.onMovementRestrictedAttempt = onAttemptCallback;
-    }
+    // 永久解除移动死限制，保证开局随时自由移动
+    this.movementRestricted = false;
+    this.onMovementRestrictedAttempt = null;
   }
 
   setJoystickVector(x, y) {
-    if (this.movementRestricted) {
-      if ((Math.abs(x) > 0.05 || Math.abs(y) > 0.05) && this.onMovementRestrictedAttempt) {
-        this.onMovementRestrictedAttempt();
-      }
-      this.joystickVector.x = 0;
-      this.joystickVector.y = 0;
-      return;
-    }
     this.joystickVector.x = x;
     this.joystickVector.y = y;
   }
 
   triggerBlink() {
-    if (this.movementRestricted) {
-      if (this.onMovementRestrictedAttempt) {
-        this.onMovementRestrictedAttempt();
-      }
-      return;
-    }
     this.skill1Triggered = true;
   }
 
@@ -62,17 +47,8 @@ export class InputManager {
     window.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
 
-      const moveKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyJ'];
-      if (this.movementRestricted && moveKeys.includes(e.code)) {
-        if (this.onMovementRestrictedAttempt) {
-          this.onMovementRestrictedAttempt();
-        }
-      }
-
       if (e.code === 'KeyJ') {
-        if (!this.movementRestricted) {
-          this.skill1Triggered = true; // J 键: 折跃闪现
-        }
+        this.skill1Triggered = true; // J 键: 折跃闪现
       }
     });
 
@@ -113,13 +89,6 @@ export class InputManager {
       this.keys['KeyD'] || this.keys['ArrowRight'];
 
     const hasJoystickMove = Math.hypot(this.joystickVector.x, this.joystickVector.y) > 0.05;
-
-    if (this.movementRestricted) {
-      if ((hasMoveKey || hasJoystickMove) && this.onMovementRestrictedAttempt) {
-        this.onMovementRestrictedAttempt();
-      }
-      return { x: 0, y: 0 };
-    }
 
     if (this.keys['KeyW'] || this.keys['ArrowUp']) dy -= 1;
     if (this.keys['KeyS'] || this.keys['ArrowDown']) dy += 1;
